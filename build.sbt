@@ -8,5 +8,8 @@ lazy val root = project
 
     scalaVersion := dottyVersion,
 
-    libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test"
+    libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test",
+
+    libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.25",
+    libraryDependencies += "org.slf4j" % "slf4j-log4j12" % "1.7.25"
   )

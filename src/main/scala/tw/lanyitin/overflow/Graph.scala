@@ -1,22 +1,37 @@
 package tw.lanyitin.overflow
 
-import scala.collection.mutable.Stack
-import scala.collection.mutable.Queue
-
 class Node[V] (val payload: V) {
   override def toString = this.payload.toString
 }
 
-class Edge[V] (val node1: Node[V], val node2: Node[V], val annotation: String = "") { }
+sealed trait Edge[V, U]
+case class UndirectedEdge[V, U](val node1: Node[V], val node2: Node[V], val annotation: U = null) extends Edge[V, U]
+case class DirectedEdge[V, U](val from: Node[V], val to: Node[V], val annotation: U = null) extends Edge[V, U]
 
-class DirectedEdge[V](val from: Node[V], val to: Node[V]) extends Edge(from, to) { }
+case class Path[V, U](edges: List[DirectedEdge[V, U]]) {
+  override def toString: String = {
+    val head = this.edges.head
+    (head.from + " -" + head.annotation + "-> " + head.to :: this.edges.tail.map(edge => " -" + edge.annotation + "-> " + edge.to))
+    .mkString
+  }
+}
 
-class Graph[V] (val nodes: Set[Node[V]], val edges: Set[Edge[V]]) {
+class Graph[V, U] (val nodes: Set[Node[V]], val edges: Set[Edge[V, U]]) {
   def adjacentNodes(node: Node[V]): Set[Node[V]] = {
     this.edges
-      .filter((edge) => edge.node1 == node || edge.node2 == node)
-      .flatMap(edge => List(edge.node1, edge.node2))
-      .filter(candicate => candicate != node)
+      .flatMap(edge => edge match {
+        case UndirectedEdge(node1, node2, payload) => {
+          if (node1 == node) {
+            List(node2)
+          } else if (node2 == node) {
+            List(node1)
+          } else {
+            List()
+          }
+        }
+        case DirectedEdge(from, to, payload) => if (from == node) List(to) else List()
+      })
+      .toSet
   }
 
   def childNodes(node: Node[V]): Set[Node[V]] = {
@@ -31,11 +46,40 @@ class Graph[V] (val nodes: Set[Node[V]], val edges: Set[Edge[V]]) {
       .map(diEdge => diEdge.from)
   }
 
-  def directedEdges: Set[DirectedEdge[V]] = {
+  def outgoingEdges(node: Node[V]): Set[DirectedEdge[V, U]] = {
+    val edgesFromDirected = this.directedEdges
+      .filter(diEdge => diEdge.from == node)
+      .toSet
+
+    val edgesFromUndirected = this.undirectedEdges
+      .flatMap(edge => {
+        if (edge.node1 == node) {
+          List(DirectedEdge(edge.node1, edge.node2, edge.annotation))
+        } else if (edge.node2 == node) {
+          List(DirectedEdge(edge.node2, edge.node1, edge.annotation))
+        } else {
+          List()
+        }
+      }).toSet
+    edgesFromDirected.union(edgesFromUndirected)
+  }
+
+  def undirectedEdges: Set[UndirectedEdge[V, U]] = {
     this.edges
       .flatMap(edge => {
-        if (edge.isInstanceOf[DirectedEdge[V]]) {
-          Set(edge.asInstanceOf[DirectedEdge[V]])
+        if (edge.isInstanceOf[UndirectedEdge[V, U]]) {
+          Set(edge.asInstanceOf[UndirectedEdge[V, U]])
+        } else {
+          Set()
+        }
+      })
+  }
+
+  def directedEdges: Set[DirectedEdge[V, U]] = {
+    this.edges
+      .flatMap(edge => {
+        if (edge.isInstanceOf[DirectedEdge[V, U]]) {
+          Set(edge.asInstanceOf[DirectedEdge[V, U]])
         } else {
           Set()
         }
@@ -50,91 +94,13 @@ class Graph[V] (val nodes: Set[Node[V]], val edges: Set[Edge[V]]) {
     this.nodes -- (this.directedEdges.map(edge => edge.from))
   }
 
-  def isCompletePath(path: List[Node[V]]): Boolean = {
-    if (path.length == 0) {
+  def isCompletePath(path: Path[V, U]): Boolean = {
+    if (path.edges.length == 0) {
       false
     } else {
       val beginSet = this.beginNodes
       val endSet = this.endNodes
-      beginSet.contains(path.head) && endSet.contains(path.last)
+      beginSet.contains(path.edges.head.from) && endSet.contains(path.edges.last.to)
     }
-  }
-}
-
-
-trait TraversalFrontier[V] {
-  def add(node: V): Unit
-  def pop: V
-  def length: Integer
-  def contains(node: V): Boolean
-}
-case class StackFrontier[V] extends TraversalFrontier[V] {
-  val stack: Stack[V] = Stack()
-  def add(node: V): Unit = {
-    this.stack.push(node)
-  }
-  def pop: V = {
-    this.stack.pop
-  }
-  def contains(node: V): Boolean = {
-    this.stack.contains(node)
-  }
-
-  def length = this.stack.length
-}
-case class QueueFrontier[V] extends TraversalFrontier[V] {
-  val queue: Queue[V] = Queue()
-
-  def add(node: V): Unit = {
-    this.queue :+ node
-  }
-  def pop: V = {
-    this.queue.dequeue
-  }
-  def contains(node: V): Boolean = {
-    this.queue.contains(node)
-  }
-
-  def length = this.queue.length
-}
-
-class PathEnumerator[V](val graph: Graph[V], val frontier: TraversalFrontier[List[Node[V]]]) {
-  val beginNodes = this.graph.beginNodes
-  val endNodes = this.graph.endNodes
-  if (this.beginNodes.size == 0) {
-    throw new Exception("this graph doesn't have beging node");
-  }
-
-  this.beginNodes.foreach(node => {
-    var candicate: List[Node[V]] = List(node)
-    this.frontier.add(candicate)
-  })
-
-  var visitPath: List[List[Node[V]]] = List()
-
-  def nextPath: List[Node[V]] = {
-    var result: List[Node[V]] = null
-    while (result == null && this.frontier.length > 0) {
-      val candicate = this.frontier.pop
-      val currentNode = candicate.head
-      if (endNodes.contains(currentNode)) {
-        this.visitPath = candicate :: this.visitPath
-        result = candicate.reverse
-      } else {
-        val nextNodes = graph.childNodes(currentNode)
-        if (nextNodes.size == 0) {
-          this.visitPath = candicate :: this.visitPath
-          result = candicate.reverse
-        } else {
-          nextNodes.foreach(nextNode => {
-            val newPath = nextNode :: candicate
-            if (!visitPath.contains(newPath)) {
-              this.frontier.add(newPath)
-            }
-          })
-        }
-      }
-    }
-    result
   }
 }
