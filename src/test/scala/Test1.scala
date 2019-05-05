@@ -46,8 +46,9 @@ class Test1 {
   }
 
   @Test def tc3(): Unit = {
+    val criterion = AllEdgeCriterion(graph)
     val frontier: TraversalFrontier[Path[Int, Null]] = new QueueFrontier()
-    val pathEnumerator: PathEnumerator[Int, Null] = new PathEnumerator[Int, Null](graph, frontier)
+    val pathEnumerator: PathEnumerator[Int, Null] = new PathEnumerator[Int, Null](graph, frontier, criterion)
     println(pathEnumerator.nextPath)
     println(pathEnumerator.nextPath)
     println(pathEnumerator.nextPath)

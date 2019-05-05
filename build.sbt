@@ -11,5 +11,8 @@ lazy val root = project
     libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test",
 
     libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.25",
-    libraryDependencies += "org.slf4j" % "slf4j-log4j12" % "1.7.25"
+    libraryDependencies += "org.slf4j" % "slf4j-log4j12" % "1.7.25",
+
+    libraryDependencies += "dom4j" % "dom4j" % "1.6.1",
+    libraryDependencies += "jaxen" % "jaxen" % "1.2.0"
   )
