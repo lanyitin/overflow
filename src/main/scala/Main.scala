@@ -2,6 +2,7 @@ import tw.lanyitin.overflow._
 import org.slf4j.LoggerFactory
 import java.io.File
 import org.dom4j.Element
+import tw.lanyitin.huevo.parse.Parser;
 
 
 object Main {
@@ -10,9 +11,11 @@ object Main {
 
   def main(args: Array[String]): Unit = {
     this.logger.trace("prepare graph")
-    var file = new File("/home/lanyitin/Projects/Mega/doc/05-功能需求規格書/20 流程圖/00 登出入首頁/MB-快速登入.xml")
-    val parse = DrawIOModalParse(file)
-    parse.parse.foreach(graph => {
+    // var file = new File("/home/lanyitin/Projects/Mega/doc/05-功能需求規格書/20 流程圖/00 登出入首頁/MB-快速登入.xml")
+    val file = new File("/home/lanyitin/sample.xml")
+    val parser = DrawIOModalParser(file)
+    parser.parse.map(g => parser.transformation(g))
+    .foreach(graph => {
       this.logger.trace("start path enumation");
 
       val criterion = AllPathCriterion(graph)

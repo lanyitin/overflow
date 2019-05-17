@@ -64,6 +64,24 @@ class Graph[V, U] (val nodes: Set[Node[V]], val edges: Set[Edge[V, U]]) {
     edgesFromDirected.union(edgesFromUndirected)
   }
 
+  def incomingEdges(node: Node[V]): Set[DirectedEdge[V, U]] = {
+    val edgesFromDirected = this.directedEdges
+      .filter(diEdge => diEdge.to == node)
+      .toSet
+
+    val edgesFromUndirected = this.undirectedEdges
+      .flatMap(edge => {
+        if (edge.node1 == node) {
+          List(DirectedEdge(edge.node1, edge.node2, edge.annotation))
+        } else if (edge.node2 == node) {
+          List(DirectedEdge(edge.node2, edge.node1, edge.annotation))
+        } else {
+          List()
+        }
+      }).toSet
+    edgesFromDirected.union(edgesFromUndirected)
+  }
+
   def undirectedEdges: Set[UndirectedEdge[V, U]] = {
     this.edges
       .flatMap(edge => {
@@ -102,5 +120,9 @@ class Graph[V, U] (val nodes: Set[Node[V]], val edges: Set[Edge[V, U]]) {
       val endSet = this.endNodes
       beginSet.contains(path.edges.head.from) && endSet.contains(path.edges.last.to)
     }
+  }
+
+  override def toString = {
+    s"Graph[${this.nodes}, ${this.edges}]"
   }
 }
