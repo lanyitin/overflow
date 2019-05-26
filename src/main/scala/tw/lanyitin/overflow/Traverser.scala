@@ -48,7 +48,7 @@ class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFronti
   val endNodes = this.graph.endNodes
 
   this.logger.trace("number of begin nodes: " + beginNodes.size)
-
+  this.logger.debug(s"begin nodes: ${this.beginNodes}")
   this.beginNodes.foreach(node1 => {
     val outgoingEdges = graph.outgoingEdges(node1)
     outgoingEdges.foreach(edge => {
