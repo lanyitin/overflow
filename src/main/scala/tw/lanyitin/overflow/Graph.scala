@@ -1,8 +1,6 @@
 package tw.lanyitin.overflow
 
-class Node[V] (val payload: V) {
-  override def toString = this.payload.toString
-}
+case class Node[V] (val payload: V)
 
 sealed trait Edge[V, U]
 case class UndirectedEdge[V, U](val node1: Node[V], val node2: Node[V], val annotation: U = null) extends Edge[V, U]
@@ -16,7 +14,7 @@ case class Path[V, U](edges: List[DirectedEdge[V, U]]) {
   }
 }
 
-class Graph[V, U] (val nodes: Set[Node[V]], val edges: Set[Edge[V, U]]) {
+case class Graph[V, U] (val nodes: Set[Node[V]], val edges: Set[Edge[V, U]]) {
   def adjacentNodes(node: Node[V]): Set[Node[V]] = {
     this.edges
       .flatMap(edge => edge match {
@@ -120,9 +118,5 @@ class Graph[V, U] (val nodes: Set[Node[V]], val edges: Set[Edge[V, U]]) {
       val endSet = this.endNodes
       beginSet.contains(path.edges.head.from) && endSet.contains(path.edges.last.to)
     }
-  }
-
-  override def toString = {
-    s"Graph[${this.nodes}, ${this.edges}]"
   }
 }

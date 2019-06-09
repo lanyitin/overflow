@@ -18,6 +18,9 @@ lazy val root = project
     libraryDependencies += "dom4j" % "dom4j" % "1.6.1",
     libraryDependencies += "jaxen" % "jaxen" % "1.2.0",
     libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.9",
+    libraryDependencies += "commons-cli" % "commons-cli" % "1.4",
+
+
     libraryDependencies += "tw.lanyitin" % "huevo_2.12" % "0.1.0",
     // To cross compile with Dotty and Scala 2
     crossScalaVersions := Seq(dottyVersion, scala212Version)

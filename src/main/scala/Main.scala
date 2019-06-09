@@ -1,28 +1,34 @@
-import tw.lanyitin.overflow._
-import org.slf4j.LoggerFactory
+import java.io.BufferedReader
+import java.io.ByteArrayInputStream
 import java.io.File
-import org.dom4j.Element
-import tw.lanyitin.huevo.parse.Parser
-import org.apache.commons.lang3.StringEscapeUtils
-import scala.util.Try
-import java.net.URLDecoder
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.File
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.FileWriter
+import java.io.IOException
+import java.io.InputStreamReader
 import java.io.Reader;
-import java.io.FileWriter;
 import java.io.StringReader
+import java.net.URLDecoder
 import java.util.Base64
 import java.util.zip.Inflater
-import java.util.zip.Inflater;
-import java.util.zip.InflaterInputStream;
+import java.util.zip.Inflater
+import java.util.zip.InflaterInputStream
+import org.apache.commons.cli.CommandLine
+import org.apache.commons.cli.CommandLineParser
+import org.apache.commons.cli.HelpFormatter
+import org.apache.commons.cli.Options
+import org.apache.commons.cli.PosixParser
+import org.apache.commons.lang3.StringEscapeUtils
 import org.dom4j.Document
 import org.dom4j.Element
+import org.dom4j.Element
 import org.dom4j.io.SAXReader
+import org.slf4j.LoggerFactory
+import scala.util.Try
 import tw.lanyitin.huevo.parse.Expression
+import tw.lanyitin.huevo.parse.Parser
 import tw.lanyitin.overflow.Visualizer
+import tw.lanyitin.overflow._
+
 
 
 object Main {
@@ -30,35 +36,65 @@ object Main {
   val logger = LoggerFactory.getLogger(this.getClass)
 
   def main(args: Array[String]): Unit = {
-    this.logger.trace("prepare graph")
-    // var file = new File("/home/lanyitin/Projects/Mega/doc/05-功能需求規格書/20 流程圖/00 登出入首頁/MB-快速登入.xml")
-    val file = new File("/home/lanyitin/Downloads/FlowChart.xml")
-    val parser = DrawIOModalParser(file)
-    parser.parse.map(g => parser.transformation(g))
-    .foreach(graph => {
-      val graphFile = new File(file.getParentFile.getAbsolutePath, "graph.dot")
-      this.logger.debug(s"graph file: ${graphFile.getAbsolutePath}")
-      if (!graphFile.exists) {
-        graphFile.createNewFile
-      }
-      val fileWriter = new FileWriter(graphFile)
-      // fileWriter.write(ElementInfoVisualizer.visualize(graph))
+    val cmd: Option[CommandLine] = this.prepareCommandLine(args);
 
-      this.logger.trace("start path enumation");
+    cmd match {
+      case Some(argv) => {
+        this.logger.trace("prepare graph")
+        // var file = new File("/home/lanyitin/Projects/Mega/doc/05-功能需求規格書/20 流程圖/00 登出入首頁/MB-快速登入.xml")
+        val file = new File(argv.getOptionValue("model"))
+        val parser = DrawIOModalParser(file)
+        parser.parse.map(g => parser.transformation(g))
+          .foreach(graph => {
+            val graphFile = new File(file.getParentFile.getAbsolutePath, "graph.dot")
+            this.logger.debug(s"graph file: ${graphFile.getAbsolutePath}")
+            if (!graphFile.exists) {
+              graphFile.createNewFile
+            }
+            val fileWriter = new FileWriter(graphFile)
+            fileWriter.write(ElementInfoVisualizer.visualize(graph))
 
-      val criterion = AllEdgeCriterion(graph)
-      val frontier: TraversalFrontier[Path[ElementInfo, ElementInfo]] = new QueueFrontier()
-      val pathEnumerator: PathEnumerator[ElementInfo, ElementInfo] = new PathEnumerator[ElementInfo, ElementInfo](graph, frontier, criterion)
-      while (!criterion.isMeetCriterion && frontier.length != 0) {
-        // this.logger.debug(s"unvisited edges: ${graph.edges -- criterion.visitedEdges}")
-        val path = pathEnumerator.nextPath
-        if (path != null) {
-          this.logger.debug(path.toString)
-          fileWriter.write(ElementInfoVisualizer.visualize(path))
-        }
+            this.logger.trace("start path enumation");
+
+            val criterion = AllEdgeCriterion(graph)
+            val frontier: TraversalFrontier[Path[ElementInfo, ElementInfo]] = new QueueFrontier()
+            val pathEnumerator: PathEnumerator[ElementInfo, ElementInfo] = new PathEnumerator[ElementInfo, ElementInfo](graph, frontier, criterion)
+            while (!criterion.isMeetCriterion && frontier.length != 0) {
+              // this.logger.debug(s"unvisited edges: ${graph.edges -- criterion.visitedEdges}")
+              val path = pathEnumerator.nextPath
+              if (path != null) {
+                this.logger.debug(path.toString)
+                // fileWriter.write(ElementInfoVisualizer.visualize(path))/
+              }
+            }
+            fileWriter.close
+          })
+
       }
-      fileWriter.close
-    })
+      case None => println
+    }
+  }
+
+
+
+  def prepareCommandLine(args: Array[String]): Option[CommandLine] = {
+    // create Options object
+    val options: Options = new Options()
+
+    // add t option
+    options.addOption("m", "model", true, "path of model file");
+
+    val parser: CommandLineParser = new PosixParser();
+
+    val cmd: CommandLine = parser.parse(options, args)
+
+    if (!cmd.hasOption("model")) {
+      val formatter: HelpFormatter = new HelpFormatter();
+      formatter.printHelp( "overflow", options );
+      None
+    } else {
+      Some(cmd)
+    }
   }
 }
 
@@ -74,7 +110,7 @@ case class ElementInfo (val id: String, val value: String) {
   override def toString: String = content
 }
 
-case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo] {
+case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo, String, String, String, String] {
   var graphCount = 0
   var pathCount = 0
 
@@ -82,9 +118,8 @@ case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo] {
     val builder = new StringBuffer
     graphCount+=1
     builder.append(s"digraph g${graphCount}{\n")
-    graph.nodes.foreach(node => builder.append("%s [label = \"(%s)%s\"]\n".format(node.payload.id, node.payload.id, node.payload.content)))
-    graph.undirectedEdges.foreach(edge => builder.append("%s -- %s\n".format(edge.node1.payload.id, edge.node2.payload.id)))
-    graph.directedEdges.foreach(edge => builder.append("%s -> %s\n".format(edge.from.payload.id, edge.to.payload.id)))
+    graph.nodes.foreach(node => builder.append(this.visualize(node)))
+    graph.edges.foreach(edge => builder.append(this.visualize(edge)))
     builder.append("}\n")
     builder.toString
   }
@@ -94,11 +129,22 @@ case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo] {
     pathCount+=1
     builder.append(s"digraph p${pathCount}{\n")
     path.edges.flatMap(edge => Set(edge.from, edge.to))
-      .foreach(node => builder.append("%s [label = \"%s\"]\n".format(node.payload.id, node.payload.content)))
-    path.edges.foreach(edge => builder.append("%s -> %s\n".format(edge.from.payload.id, edge.to.payload.id)))
-    builder.append("}\n")
-    builder.toString
+      .foreach(node => builder.append(this.visualize(node)))
+      path.edges.foreach(edge => builder.append(this.visualize(edge)))
+      builder.append("}\n")
+      builder.toString
   }
+
+  def visualize(edge: Edge[ElementInfo, ElementInfo]): String = {
+    edge match {
+      case UndirectedEdge(n1, n2, data) => "%s -- %s\n".format(n1.payload.id, n2.payload.id)
+      case DirectedEdge(n1, n2, data) => "%s -> %s\n".format(n1.payload.id, n2.payload.id)
+    }
+  }
+  def visualize(node: Node[ElementInfo]): String = {
+    "%s [label = \"(%s)%s\"]\n".format(node.payload.id, node.payload.id, node.payload.content)
+  }
+
 }
 
 sealed class DrawIOModalParser(val file: File) extends ModelParse[ElementInfo, ElementInfo] {
@@ -147,43 +193,43 @@ sealed class DrawIOModalParser(val file: File) extends ModelParse[ElementInfo, E
       val result = decoder.decode(data)
       // this.logger.debug("result: " + result.length)
       result
-    }).map((data: Array[Byte]) => {
-      URLDecoder.decode(this.inflate(data), "UTF-8")
-    }).map(inflated => {
-      // this.logger.debug("inflated: " + inflated)
-      reader.read(new StringReader(inflated))
-    }).map(doc => {
-      import collection.JavaConverters._
-      import scala.language.implicitConversions
-      val nodeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@vertex=\"1\"]").asInstanceOf[java.util.List[Element]].asScala
-        .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
-        .toList
-      val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
+      }).map((data: Array[Byte]) => {
+        URLDecoder.decode(this.inflate(data), "UTF-8")
+        }).map(inflated => {
+          // this.logger.debug("inflated: " + inflated)
+          reader.read(new StringReader(inflated))
+          }).map(doc => {
+            import collection.JavaConverters._
+            import scala.language.implicitConversions
+            val nodeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@vertex=\"1\"]").asInstanceOf[java.util.List[Element]].asScala
+              .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
+              .toList
+              val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
 
-      this.logger.debug("nodes in model: " + nodeElements.length)
-      this.logger.debug("edges in model: " + edgeElements.length)
+              this.logger.debug("nodes in model: " + nodeElements.length)
+              this.logger.debug("edges in model: " + edgeElements.length)
 
-      val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id"), elem.attribute("value").getText))).toSet
-      val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.flatMap(elem => {
-        val source = nodes.find(node => node.payload.id == elem.attributeValue("source"))
-        val target = nodes.find(node => node.payload.id == elem.attributeValue("target"))
-        val result = for {
-          s <- source
-          t <- target
-        } yield Set(DirectedEdge(s, t, ElementInfo(elem.attributeValue("id"), elem.attributeValue("value"))))
+              val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id"), elem.attribute("value").getText))).toSet
+              val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.flatMap(elem => {
+                val source = nodes.find(node => node.payload.id == elem.attributeValue("source"))
+                val target = nodes.find(node => node.payload.id == elem.attributeValue("target"))
+                val result = for {
+                  s <- source
+                  t <- target
+                } yield Set(DirectedEdge(s, t, ElementInfo(elem.attributeValue("id"), elem.attributeValue("value"))))
 
-        if (result.isEmpty) {
-          Set()
-        } else {
-          result.get
-        }
-      })
+                if (result.isEmpty) {
+                  Set()
+                } else {
+                  result.get
+                }
+              })
 
-      this.logger.debug("nodes parsed: " + nodes.size)
-      this.logger.debug("edges parsed: " + edges.size)
+            this.logger.debug("nodes parsed: " + nodes.size)
+            this.logger.debug("edges parsed: " + edges.size)
 
-      Graph(nodes, edges)
-    })
+            Graph(nodes, edges)
+          })
   }
 
   def inflate(binary: Array[Byte]): String = {
