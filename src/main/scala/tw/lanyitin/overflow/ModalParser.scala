@@ -9,6 +9,7 @@ import tw.lanyitin.huevo.lex.TokenType._
 
 trait ModelParse[V, U] {
   Parser.parseOnly = true;
+  val exprWrapperPattern = "\\{\\{[^\\}]+\\}\\}".r
   val logger = LoggerFactory.getLogger(this.getClass)
   def parse: Set[Graph[V, U]]
   def expr2Node(expr: Expression): Node[V] 
@@ -23,7 +24,7 @@ trait ModelParse[V, U] {
   }
 
   def exprToGraph(expr: Expression): Graph[V, U] = {
-    expr match {
+    val result = expr match {
       case IdentifierExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
       case BooleanLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
       case IntegerLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
@@ -45,7 +46,7 @@ trait ModelParse[V, U] {
         } else if (token.txt == "and") {
           val g1 = exprToGraph(expr1)
           val g2 = exprToGraph(expr2)
-          // this.logger.debug(s"=>>>> ${expr2}")
+          // this.logger.trace(s"=>>>> ${expr2}")
 
           val allNodes = g1.nodes.union(g2.nodes)
           val allEdges = g1.edges.union(g2.edges)
@@ -57,11 +58,13 @@ trait ModelParse[V, U] {
         } else {
           val result = this.expr2Node(expr)
 
-          // this.logger.debug(s"==============> ${expr} ${result}")
+          // this.logger.trace(s"==============> ${expr} ${result}")
           Graph(Set(result), Set())
         }
       }
     }
+    this.logger.trace(s"exprToGraph: ${expr} ${result}")
+    result
   }
 
   def exprToStr(expr: Expression): String = {
@@ -99,23 +102,25 @@ trait ModelParse[V, U] {
 
   def transformation(graph: Graph[V, U]): Graph[V, U] = {
     def iterate(nodes: List[Node[V]], originGraph: Graph[V, U]): Graph[V, U] = {
-      // this.logger.debug("working on graph: " + originGraph)
+      // this.logger.trace("working on graph: " + originGraph)
       if (nodes.length == 0) originGraph
       else {
         val node = nodes.head
-        // this.logger.debug("working on transform: " + node.toString)
-        if (node.toString.trim.length > 0) {
-          this.logger.debug(s"expression: ${node.payload.toString}")
-          val exprScanner = Scanner(node.payload.toString)
+        val expr = this.exprWrapperPattern.findAllIn(node.payload.toString).toList.map(seg => seg.replace("{{", "").replace("}}", "").replace("\n", "").trim).mkString(" ").trim
+        this.logger.trace("working on transform: " + expr)
+        if (expr.length > 0) {
+          this.logger.trace(s"expression: ${expr}")
+          val exprScanner = Scanner(expr)
           try {
             val parseResult = Parser.parse_boolean_expression(exprScanner);
             if (parseResult.isSuccess) {
               val (expr, state) = parseResult.get
               val exprGraph = this.exprToGraph(expr)
-              // this.logger.debug("expr graph: " + exprGraph)
+              // this.logger.trace("expr graph: " + exprGraph)
               val originOutgoingEdge = originGraph.outgoingEdges(node)
               val originIncomeEdge = originGraph.incomingEdges(node)
               if (this.isBranchNode(node, originGraph)) {
+                this.logger.trace(s"${node} is a branch")
                 val falseExprGraph = this.exprToGraph(this.inverse(expr))
                 val beginNode = this.pseudoNode
                 
@@ -133,16 +138,17 @@ trait ModelParse[V, U] {
                   originGraph.nodes.union(exprGraph.nodes).union(falseExprGraph.nodes) - node + beginNode,
                   ((((originGraph.edges -- originIncomeEdge) -- originOutgoingEdge) ++ newIncomingEdges) ++ newOutgoingTruePath ++ newOutgoingFalsePath) ++ exprGraph.edges ++ falseExprGraph.edges
                 )
-                // this.logger.debug("new graph: " + newGraph)
+                // this.logger.trace("new graph: " + newGraph)
                 iterate(nodes.tail, newGraph) 
               } else {
+                this.logger.trace(s"${node} is not a branch")
                 val newOutgoingEdges = originOutgoingEdge.flatMap(e => exprGraph.endNodes.map(endNode => DirectedEdge(endNode, e.to, e.annotation)))
                 val newIncomingEdges = originIncomeEdge.flatMap(e => exprGraph.beginNodes.map(beginNode => DirectedEdge(e.from, beginNode, e.annotation)))
                 val newGraph = Graph(
                   originGraph.nodes.union(exprGraph.nodes) - node,
                   ((((originGraph.edges -- originIncomeEdge) -- originOutgoingEdge) ++ newIncomingEdges) ++ newOutgoingEdges) ++ exprGraph.edges
                 )
-                // this.logger.debug("new graph: " + newGraph)
+                // this.logger.trace("new graph: " + newGraph)
                 iterate(nodes.tail, newGraph)
               }
             } else {

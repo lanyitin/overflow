@@ -47,27 +47,27 @@ object Main {
         parser.parse.map(g => parser.transformation(g))
           .foreach(graph => {
             val graphFile = new File(file.getParentFile.getAbsolutePath, "graph.dot")
-            this.logger.debug(s"graph file: ${graphFile.getAbsolutePath}")
+            this.logger.trace(s"graph file: ${graphFile.getAbsolutePath}")
             if (!graphFile.exists) {
               graphFile.createNewFile
             }
             val fileWriter = new FileWriter(graphFile)
             fileWriter.write(ElementInfoVisualizer.visualize(graph))
-
+            fileWriter.close
             this.logger.trace("start path enumation");
 
             val criterion = AllEdgeCriterion(graph)
             val frontier: TraversalFrontier[Path[ElementInfo, ElementInfo]] = new QueueFrontier()
             val pathEnumerator: PathEnumerator[ElementInfo, ElementInfo] = new PathEnumerator[ElementInfo, ElementInfo](graph, frontier, criterion)
             while (!criterion.isMeetCriterion && frontier.length != 0) {
-              // this.logger.debug(s"unvisited edges: ${graph.edges -- criterion.visitedEdges}")
+              // this.logger.trace(s"unvisited edges: ${graph.edges -- criterion.visitedEdges}")
               val path = pathEnumerator.nextPath
               if (path != null) {
                 this.logger.debug(path.toString)
+
                 // fileWriter.write(ElementInfoVisualizer.visualize(path))/
               }
             }
-            fileWriter.close
           })
 
       }
@@ -189,14 +189,14 @@ sealed class DrawIOModalParser(val file: File) extends ModelParse[ElementInfo, E
     }
 
     diagramData.map(data => {
-      // this.logger.debug("diagram data: " + data)
+      // this.logger.trace("diagram data: " + data)
       val result = decoder.decode(data)
-      // this.logger.debug("result: " + result.length)
+      // this.logger.trace("result: " + result.length)
       result
       }).map((data: Array[Byte]) => {
         URLDecoder.decode(this.inflate(data), "UTF-8")
         }).map(inflated => {
-          // this.logger.debug("inflated: " + inflated)
+          // this.logger.trace("inflated: " + inflated)
           reader.read(new StringReader(inflated))
           }).map(doc => {
             import collection.JavaConverters._
@@ -206,8 +206,8 @@ sealed class DrawIOModalParser(val file: File) extends ModelParse[ElementInfo, E
               .toList
               val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
 
-              this.logger.debug("nodes in model: " + nodeElements.length)
-              this.logger.debug("edges in model: " + edgeElements.length)
+              this.logger.trace("nodes in model: " + nodeElements.length)
+              this.logger.trace("edges in model: " + edgeElements.length)
 
               val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id"), elem.attribute("value").getText))).toSet
               val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.flatMap(elem => {
@@ -225,8 +225,8 @@ sealed class DrawIOModalParser(val file: File) extends ModelParse[ElementInfo, E
                 }
               })
 
-            this.logger.debug("nodes parsed: " + nodes.size)
-            this.logger.debug("edges parsed: " + edges.size)
+            this.logger.trace("nodes parsed: " + nodes.size)
+            this.logger.trace("edges parsed: " + edges.size)
 
             Graph(nodes, edges)
           })
@@ -241,7 +241,7 @@ sealed class DrawIOModalParser(val file: File) extends ModelParse[ElementInfo, E
     ch = in.read()
     while (ch > -1)
     {
-      // this.logger.debug("char: " + ch.asInstanceOf[Char])
+      // this.logger.trace("char: " + ch.asInstanceOf[Char])
       buffer.append(ch.asInstanceOf[Char]);
       ch = in.read()
     }
