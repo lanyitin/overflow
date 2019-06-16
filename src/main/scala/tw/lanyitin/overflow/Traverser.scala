@@ -5,6 +5,11 @@ import scala.collection.mutable.Stack
 import scala.collection.mutable.Queue
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import tw.lanyitin.common.graph.Graph
+import tw.lanyitin.common.graph.Path
+import tw.lanyitin.common.graph.DirectedEdge
+import tw.lanyitin.common.graph.UndirectedEdge
+import tw.lanyitin.common.graph.Node
 
 trait TraversalFrontier[V] {
   def add(node: V): Unit
@@ -12,7 +17,7 @@ trait TraversalFrontier[V] {
   def length: Integer
   def contains(node: V): Boolean
 }
-case class StackFrontier[V] extends TraversalFrontier[V] {
+case class StackFrontier[V]() extends TraversalFrontier[V] {
   val stack: Stack[V] = Stack()
   def add(node: V): Unit = {
     this.stack.push(node)
@@ -26,7 +31,7 @@ case class StackFrontier[V] extends TraversalFrontier[V] {
 
   def length = this.stack.length
 }
-case class QueueFrontier[V] extends TraversalFrontier[V] {
+case class QueueFrontier[V]() extends TraversalFrontier[V] {
   val queue: Queue[V] = Queue()
 
   def add(node: V): Unit = {
@@ -92,13 +97,14 @@ class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFronti
 }
 
 
-sealed trait CoverageCriterion[V, U](graph: Graph[V,U]) {
+sealed trait CoverageCriterion[V, U] {
+  def graph: Graph[V,U]
   def addVisitPath(path: Path[V, U]): Unit
   def isMeetCriterion: Boolean
   def isVisited(path: Path[V, U]): Boolean
 }
 
-case class AllNodeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U](graph) {
+case class AllNodeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U] {
   val logger = LoggerFactory.getLogger(this.getClass)
   var visitedNodes: Set[Node[V]] = Set();
   var visitedPath: Set[Path[V, U]] = Set();
@@ -118,7 +124,7 @@ case class AllNodeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriteri
   }
 }
 
-case class AllEdgeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U](graph) {
+case class AllEdgeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U] {
   val logger = LoggerFactory.getLogger(this.getClass)
   var visitedEdges: Set[DirectedEdge[V, U]] = Set()
   var visitedPath: Set[Path[V, U]] = Set();
@@ -142,7 +148,7 @@ case class AllEdgeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriteri
   }
 }
 
-case class AllPathCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U](graph) {
+case class AllPathCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U] {
   val logger = LoggerFactory.getLogger(this.getClass)
   var visitedPath: Set[Path[V, U]] = Set();
 

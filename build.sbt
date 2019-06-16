@@ -1,14 +1,16 @@
-val dottyVersion = "0.14.0-RC1"
-val scala212Version = "2.12.7"
+lazy val huevo = RootProject(file("../huevo"))
+lazy val commonGraph = RootProject(file("../common-graph"))
 
 lazy val root = project
   .in(file("."))
+  .aggregate(huevo, commonGraph)
+  .dependsOn(commonGraph, huevo)
   .settings(
     name := "overflow",
     version := "0.1.0",
 
     // To make the default compiler and REPL use Dotty
-    scalaVersion := dottyVersion,
+    scalaVersion := "2.12.8",
 
     libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % "test",
 
@@ -20,8 +22,4 @@ lazy val root = project
     libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.9",
     libraryDependencies += "commons-cli" % "commons-cli" % "1.4",
 
-
-    libraryDependencies += "tw.lanyitin" % "huevo_2.12" % "0.1.0",
-    // To cross compile with Dotty and Scala 2
-    crossScalaVersions := Seq(dottyVersion, scala212Version)
   )

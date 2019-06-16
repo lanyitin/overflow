@@ -5,6 +5,12 @@
 		},
 		{
 			"path": "/home/lanyitin/Projects/huevo"
+		},
+		{
+			"path": "/home/lanyitin/Projects/common-ast"
+		},
+		{
+			"path": "/home/lanyitin/Projects/common-graph"
 		}
 	],
 	"settings": {}

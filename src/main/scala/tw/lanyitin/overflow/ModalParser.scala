@@ -4,10 +4,22 @@ import org.slf4j.LoggerFactory
 
 import tw.lanyitin.huevo.parse._
 import tw.lanyitin.huevo.lex.Scanner
-import tw.lanyitin.huevo.lex.Token
-import tw.lanyitin.huevo.lex.TokenType._
+import tw.lanyitin.common.ast.Token
+import tw.lanyitin.common.ast.TokenType._
+import tw.lanyitin.common.graph.Graph
+import tw.lanyitin.common.graph.DirectedEdge
+import tw.lanyitin.common.graph.Edge
+import tw.lanyitin.common.graph.Node
+import tw.lanyitin.common.ast.OperationCallExpression
+import tw.lanyitin.common.ast.BooleanLiteralExpression
+import tw.lanyitin.common.ast.TokenType.BooleanConstantToken
+import tw.lanyitin.common.ast.IdentifierExpression
+import tw.lanyitin.common.ast.Expression
+import tw.lanyitin.common.ast.FunctionCallExpression
+import tw.lanyitin.common.ast.FloatLiteralExpression
+import tw.lanyitin.common.ast.IntegerLiteralExpression
 
-trait ModelParse[V, U] {
+trait ModelParser[V, U] {
   Parser.parseOnly = true;
   val exprWrapperPattern = "\\{\\{[^\\}]+\\}\\}".r
   val logger = LoggerFactory.getLogger(this.getClass)
@@ -25,23 +37,23 @@ trait ModelParse[V, U] {
 
   def exprToGraph(expr: Expression): Graph[V, U] = {
     val result = expr match {
-      case IdentifierExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
-      case BooleanLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
-      case IntegerLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
-      case FloatLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set())
-      case FunctionCallExpression(_, _: _*) => Graph(Set(this.expr2Node(expr)), Set())
+      case IdentifierExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
+      case BooleanLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
+      case IntegerLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
+      case FloatLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
+      case FunctionCallExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
       case OperationCallExpression(token, expr1, expr2) => {
         if (token.txt == "or") {
           val g1 = exprToGraph(expr1)
           val g2 = exprToGraph(expr2)
           val startNode = this.pseudoNode
           val endNode = this.pseudoNode
-          val startToLeft = g1.beginNodes.map(n => this.pseudoEdge(startNode, n))
-          val startToRight = g2.beginNodes.map(n => this.pseudoEdge(startNode, n))
-          val leftToEnd = g1.endNodes.map(n => this.pseudoEdge(n, endNode))
-          val rightToEnd = g2.endNodes.map(n => this.pseudoEdge(n, endNode))
+          val startToLeft = g1.beginNodes.map(n => this.pseudoEdge(startNode, n)).toSet
+          val startToRight = g2.beginNodes.map(n => this.pseudoEdge(startNode, n)).toSet
+          val leftToEnd = g1.endNodes.map(n => this.pseudoEdge(n, endNode)).toSet
+          val rightToEnd = g2.endNodes.map(n => this.pseudoEdge(n, endNode)).toSet
           val allNodes = g1.nodes.union(g2.nodes) + startNode + endNode
-          val allEdges = g1.edges.union(g2.edges).union(startToLeft).union(startToRight).union(leftToEnd).union(rightToEnd)
+          val allEdges: Set[tw.lanyitin.common.graph.Edge[V,U]] = g1.edges.union(g2.edges).union(startToLeft).union(startToRight).union(leftToEnd).union(rightToEnd)
           Graph(allNodes, allEdges)
         } else if (token.txt == "and") {
           val g1 = exprToGraph(expr1)
@@ -59,7 +71,7 @@ trait ModelParse[V, U] {
           val result = this.expr2Node(expr)
 
           // this.logger.trace(s"==============> ${expr} ${result}")
-          Graph(Set(result), Set())
+          Graph(Set(result), Set[Edge[V, U]]())
         }
       }
     }
@@ -73,7 +85,7 @@ trait ModelParse[V, U] {
       case IntegerLiteralExpression(_, value) => value.toString
       case FloatLiteralExpression(_, value) => value.toString
       case IdentifierExpression(token, _) => token.txt
-      case FunctionCallExpression(func, parameters: _*) => {
+      case FunctionCallExpression(func, parameters @_*) => {
         s"${func.token.txt}(${parameters.map(this.exprToStr).mkString(", ")})"
       }
       case OperationCallExpression(token, expr1, expr2) => {
@@ -124,7 +136,8 @@ trait ModelParse[V, U] {
                 val falseExprGraph = this.exprToGraph(this.inverse(expr))
                 val beginNode = this.pseudoNode
                 
-                val newIncomingEdges = originIncomeEdge.map(e => DirectedEdge(e.from, beginNode, e.annotation))
+                val newIncomingEdges = 
+                originIncomeEdge.map(e => DirectedEdge(e.from, beginNode, e.annotation).asInstanceOf[Edge[V, U]])
                 .union(exprGraph.beginNodes.map(n => this.pseudoEdge(beginNode, n)))
                 .union(falseExprGraph.beginNodes.map(n => this.pseudoEdge(beginNode, n)))
 
@@ -156,7 +169,7 @@ trait ModelParse[V, U] {
               iterate(nodes.tail, originGraph)
             }
           } catch {
-            case e =>
+            case e: Throwable =>
               iterate(nodes.tail, originGraph)
           }
         } else {
