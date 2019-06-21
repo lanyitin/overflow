@@ -18,10 +18,11 @@ import tw.lanyitin.common.ast.Expression
 import tw.lanyitin.common.ast.FunctionCallExpression
 import tw.lanyitin.common.ast.FloatLiteralExpression
 import tw.lanyitin.common.ast.IntegerLiteralExpression
+import scala.util.Try
+
+
 
 trait ModelParser[V, U] {
-  Parser.parseOnly = true;
-  val exprWrapperPattern = "\\{\\{[^\\}]+\\}\\}".r
   val logger = LoggerFactory.getLogger(this.getClass)
   def parse: Set[Graph[V, U]]
   def expr2Node(expr: Expression): Node[V] 
@@ -29,6 +30,11 @@ trait ModelParser[V, U] {
   def pseudoEdge(node1: Node[V], node2: Node[V]): Edge[V, U]
   def isTruePath(edge: DirectedEdge[V, U]): Boolean
   def isFalsePath(edge: DirectedEdge[V, U]): Boolean
+  def extractExpression(node: Node[V]): String
+  def parseExpression(str: String): Try[Expression] = {
+    Parser.parseOnly = true;
+    Parser.parse_boolean_expression(Scanner(str)).map(_._1);
+  }
 
   def isBranchNode(node: Node[V], g: Graph[V, U]): Boolean = {
     val outgoingEdges = g.outgoingEdges(node)
@@ -37,10 +43,6 @@ trait ModelParser[V, U] {
 
   def exprToGraph(expr: Expression): Graph[V, U] = {
     val result = expr match {
-      case IdentifierExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
-      case BooleanLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
-      case IntegerLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
-      case FloatLiteralExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
       case FunctionCallExpression(_, _) => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
       case OperationCallExpression(token, expr1, expr2) => {
         if (token.txt == "or") {
@@ -74,6 +76,7 @@ trait ModelParser[V, U] {
           Graph(Set(result), Set[Edge[V, U]]())
         }
       }
+      case default => Graph(Set(this.expr2Node(expr)), Set[Edge[V, U]]())
     }
     this.logger.trace(s"exprToGraph: ${expr} ${result}")
     result
@@ -118,15 +121,14 @@ trait ModelParser[V, U] {
       if (nodes.length == 0) originGraph
       else {
         val node = nodes.head
-        val expr = this.exprWrapperPattern.findAllIn(node.payload.toString).toList.map(seg => seg.replace("{{", "").replace("}}", "").replace("\n", "").trim).mkString(" ").trim
-        this.logger.trace("working on transform: " + expr)
-        if (expr.length > 0) {
-          this.logger.trace(s"expression: ${expr}")
-          val exprScanner = Scanner(expr)
+        val exprStr = this.extractExpression(node)
+        this.logger.trace("working on transform: " + exprStr)
+        if (exprStr.length > 0) {
+          this.logger.trace(s"expression: ${exprStr}")
           try {
-            val parseResult = Parser.parse_boolean_expression(exprScanner);
+            val parseResult = this.parseExpression(exprStr)
             if (parseResult.isSuccess) {
-              val (expr, state) = parseResult.get
+              val expr = parseResult.get
               val exprGraph = this.exprToGraph(expr)
               // this.logger.trace("expr graph: " + exprGraph)
               val originOutgoingEdge = originGraph.outgoingEdges(node)

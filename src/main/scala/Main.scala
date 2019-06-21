@@ -117,6 +117,10 @@ case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, El
     DirectedEdge(node1, node2, ElementInfo("pseudoEdge" + this.pseudoId, ""))
   }
 
+  val exprWrapperPattern = "\\{\\{[^\\}]+\\}\\}".r
+
+  def extractExpression(node: Node[ElementInfo]): String = 
+    this.exprWrapperPattern.findAllIn(node.payload.toString).toList.map(seg => seg.replace("{{", "").replace("}}", "").replace("\n", "").trim).mkString(" ").trim
 
   def parse: Set[Graph[ElementInfo, ElementInfo]] = {
     val iterator = document.selectNodes("/mxfile/diagram").iterator
