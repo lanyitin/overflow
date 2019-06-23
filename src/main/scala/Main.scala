@@ -28,6 +28,7 @@ import tw.lanyitin.common.ast.Expression
 import tw.lanyitin.huevo.parse.Parser
 import tw.lanyitin.overflow.Visualizer
 import tw.lanyitin.common.graph.Graph
+import tw.lanyitin.common.graph.GraphFactory
 import tw.lanyitin.common.graph.Path
 import tw.lanyitin.common.graph.Node
 import tw.lanyitin.common.graph.Edge
@@ -48,7 +49,7 @@ case class ElementInfo (val id: String, val value: String) {
       ""
     }
   })
-  override def toString: String = content
+  override def toString: String = s"(${id}) ${content}"
 }
 
 case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo, String, String, String, String] {
@@ -85,16 +86,31 @@ case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo, S
   def visualize(node: Node[ElementInfo]): String = {
     "%s [label = \"(%s)%s\"]\n".format(node.payload.id, node.payload.id, node.payload.content)
   }
-
 }
 
-case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, ElementInfo] {
+trait DrawIOGraphFactory extends GraphFactory[ElementInfo, ElementInfo] {
+  var pseudoId = 0;
+  def pseudoNode: Node[ElementInfo] = {
+    this.pseudoId += 1
+    Node(ElementInfo("pseudoNode" + this.pseudoId, ""))
+  }
+
+  def pseudoEdge(node1: Node[ElementInfo], node2: Node[ElementInfo]): Edge[ElementInfo, ElementInfo] = {
+    this.pseudoId += 1
+    DirectedEdge(node1, node2, ElementInfo("pseudoEdge" + this.pseudoId, ""))
+  }
+}
+
+case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, ElementInfo] with DrawIOGraphFactory {
   // /home/lanyitin/Projects/Mega/doc/05-%E5%8A%9F%E8%83%BD%E9%9C%80%E6%B1%82%E8%A6%8F%E6%A0%BC%E6%9B%B8/20%20%E6%B5%81%E7%A8%8B%E5%9C%96/00%20%E7%99%BB%E5%87%BA%E5%85%A5%E9%A6%96%E9%A0%81/MB-%E5%BF%AB%E9%80%9F%E7%99%BB%E5%85%A5.xml
   val reader = new SAXReader();
   // val logger = LoggerFactory.getLogger(this.getClass)
   val document = reader.read(this.file)
 
-  var pseudoId = 0;
+  def duplicateNode(node: Node[ElementInfo]) = {
+    this.pseudoId += 1
+    Node(ElementInfo("pseudoNode" + this.pseudoId, node.payload.content))
+  }
 
   def isTruePath(edge: DirectedEdge[ElementInfo, ElementInfo]): Boolean = {
     edge.annotation != null && edge.annotation.value!= null && edge.annotation.value.equals("Y")
@@ -105,16 +121,7 @@ case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, El
 
   def expr2Node(expr: Expression): Node[ElementInfo] = {
     this.pseudoId += 1
-    Node(ElementInfo("pseudoNode" + this.pseudoId, this.exprToStr(expr)))
-  }
-  def pseudoNode: Node[ElementInfo] = {
-    this.pseudoId += 1
-    Node(ElementInfo("pseudoNode" + this.pseudoId, ""))
-  }
-
-  def pseudoEdge(node1: Node[ElementInfo], node2: Node[ElementInfo]): Edge[ElementInfo, ElementInfo] = {
-    this.pseudoId += 1
-    DirectedEdge(node1, node2, ElementInfo("pseudoEdge" + this.pseudoId, ""))
+    Node(ElementInfo("expr" + this.pseudoId, this.exprToStr(expr)))
   }
 
   val exprWrapperPattern = "\\{\\{[^\\}]+\\}\\}".r
@@ -122,7 +129,7 @@ case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, El
   def extractExpression(node: Node[ElementInfo]): String = 
     this.exprWrapperPattern.findAllIn(node.payload.toString).toList.map(seg => seg.replace("{{", "").replace("}}", "").replace("\n", "").trim).mkString(" ").trim
 
-  def parse: Set[Graph[ElementInfo, ElementInfo]] = {
+  def parseGraph: Set[Graph[ElementInfo, ElementInfo]] = {
     val iterator = document.selectNodes("/mxfile/diagram").iterator
     val decompresser = new Inflater()
     val decoder = Base64.getDecoder
@@ -154,14 +161,14 @@ case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, El
               this.logger.trace("nodes in model: " + nodeElements.length)
               this.logger.trace("edges in model: " + edgeElements.length)
 
-              val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id"), elem.attribute("value").getText))).toSet
+              val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id").replaceAll("_", "").replaceAll("-", ""), elem.attribute("value").getText))).toSet
               val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.map((elem: Element) => {
-                val source = nodes.find(node => node.payload.id == elem.attributeValue("source"))
-                val target = nodes.find(node => node.payload.id == elem.attributeValue("target"))
+                val source = nodes.find(node => node.payload.id == elem.attributeValue("source").replaceAll("_", "").replaceAll("-", ""))
+                val target = nodes.find(node => node.payload.id == elem.attributeValue("target").replaceAll("_", "").replaceAll("-", ""))
                 val result = for {
                   s <- source
                   t <- target
-                } yield Set(DirectedEdge(s, t, ElementInfo(elem.attributeValue("id"), elem.attributeValue("value"))))
+                } yield Set(DirectedEdge(s, t, ElementInfo(elem.attributeValue("id").replaceAll("_", "").replaceAll("-", ""), elem.attributeValue("value"))))
 
                 if (result.isEmpty) {
                   Set()
@@ -211,7 +218,7 @@ object Main {
         // var file = new File("/home/lanyitin/Projects/Mega/doc/05-功能需求規格書/20 流程圖/00 登出入首頁/MB-快速登入.xml")
         val file = new File(argv.getOptionValue("model"))
         val parser = DrawIOModalParser(file)
-        parser.parse.map(g => parser.transformation(g))
+        parser.parseGraph.map(g => parser.transformation(g))
           .foreach(graph => {
             val graphFile = new File(file.getParentFile.getAbsolutePath, "graph.dot")
             this.logger.trace(s"graph file: ${graphFile.getAbsolutePath}")
@@ -230,7 +237,7 @@ object Main {
               // this.logger.trace(s"unvisited edges: ${graph.edges -- criterion.visitedEdges}")
               val path = pathEnumerator.nextPath
               if (path != null) {
-                this.logger.debug(path.toString)
+                this.logger.trace(path.toString)
 
                 // fileWriter.write(ElementInfoVisualizer.visualize(path))/
               }
