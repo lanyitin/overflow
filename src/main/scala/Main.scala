@@ -154,10 +154,13 @@ case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, El
             import collection.JavaConverters._
             import scala.language.implicitConversions
             val nodeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@vertex=\"1\"]").asInstanceOf[java.util.List[Element]].asScala
-              .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
+              .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0") == null)
               .toList
               val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
-
+              val noEndEdge = edgeElements.filter(elem => elem.attributeValue("source") == null || elem.attributeValue("target") == null)
+              if (noEndEdge.size > 0) {
+                  throw new Error(noEndEdge.mkString("\n"))
+              }
               this.logger.trace("nodes in model: " + nodeElements.length)
               this.logger.trace("edges in model: " + edgeElements.length)
 
