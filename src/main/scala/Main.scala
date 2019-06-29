@@ -5,7 +5,7 @@ import java.io.File
 import java.io.FileWriter
 import java.io.IOException
 import java.io.InputStreamReader
-import java.io.Reader;
+import java.io.Reader
 import java.io.StringReader
 import java.net.URLDecoder
 import java.util.Base64
@@ -157,14 +157,25 @@ case class DrawIOModalParser(val file: File, val isMCC: Boolean) extends ModelPa
               .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
               .toList
               val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
-              val noEndEdge = edgeElements.filter(elem => elem.attributeValue("source") == null || elem.attributeValue("target") == null)
+              val noEndEdge: List[Element] = edgeElements.filter(elem => elem.attributeValue("source") == null || elem.attributeValue("target") == null)
               if (noEndEdge.size > 0) {
-                  throw new Error(noEndEdge.mkString("\n"))
+                val represent = noEndEdge.map(edge => {
+                    if (edge.attributeValue("source") != null) {
+                      nodeElements
+                        .filter(node => node.attributeValue("id") == edge.attributeValue("source"))
+                        .map(node => node.attributeValue("value") + "-> <none>")
+                    } else {
+                      nodeElements
+                        .filter(node => node.attributeValue("id") == edge.attributeValue("target"))
+                        .map(node => "<none> -> " + node.attributeValue("value"))
+                    }
+                  })
+                  throw new Error(represent.flatten.mkString("\n"))
               }
               this.logger.trace("nodes in model: " + nodeElements.length)
               this.logger.trace("edges in model: " + edgeElements.length)
 
-              val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id").replaceAll("_", "").replaceAll("-", ""), elem.attribute("value").getText))).toSet
+              val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => Node(ElementInfo(elem.attributeValue("id").replaceAll("_", "").replaceAll("-", ""), elem.attributeValue("value")))).toSet
               val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.map((elem: Element) => {
                 val source = nodes.find(node => node.payload.id == elem.attributeValue("source").replaceAll("_", "").replaceAll("-", ""))
                 val target = nodes.find(node => node.payload.id == elem.attributeValue("target").replaceAll("_", "").replaceAll("-", ""))
@@ -236,12 +247,17 @@ object Main {
             val criterion = AllEdgeCriterion(graph)
             val frontier: TraversalFrontier[Path[ElementInfo, ElementInfo]] = new QueueFrontier()
             val pathEnumerator: PathEnumerator[ElementInfo, ElementInfo] = new PathEnumerator[ElementInfo, ElementInfo](graph, frontier, criterion)
+            var count = 0;
             while (!criterion.isMeetCriterion && frontier.length != 0) {
               // this.logger.trace(s"unvisited edges: ${graph.edges -- criterion.visitedEdges}")
               val path = pathEnumerator.nextPath
               if (path != null) {
                 this.logger.trace(path.toString)
-
+                val pathFile = new File(file.getParentFile.getAbsolutePath, s"path${count}.dot")
+                count += 1
+                val pathFileWriter = new FileWriter(pathFile)
+                pathFileWriter.write(ElementInfoVisualizer.visualize(path))
+                pathFileWriter.close
                 // fileWriter.write(ElementInfoVisualizer.visualize(path))/
               }
             }
