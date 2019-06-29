@@ -79,8 +79,8 @@ case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo, S
 
   def visualize(edge: Edge[ElementInfo, ElementInfo]): String = {
     edge match {
-      case UndirectedEdge(n1, n2, data) => "%s -- %s\n".format(n1.payload.id, n2.payload.id)
-      case DirectedEdge(n1, n2, data) => "%s -> %s\n".format(n1.payload.id, n2.payload.id)
+      case UndirectedEdge(n1, n2, data) => "%s -- %s [label = \"%s\"]\n".format(n1.payload.id, n2.payload.id, data.content)
+      case DirectedEdge(n1, n2, data) => "%s -> %s [label = \"%s\"]\n".format(n1.payload.id, n2.payload.id, data.content)
     }
   }
   def visualize(node: Node[ElementInfo]): String = {
