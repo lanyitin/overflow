@@ -84,7 +84,7 @@ case object ElementInfoVisualizer extends Visualizer[ElementInfo, ElementInfo, S
     }
   }
   def visualize(node: Node[ElementInfo]): String = {
-    "%s [label = \"(%s)%s\"]\n".format(node.payload.id, node.payload.id, node.payload.content)
+    "%s [label = \"%s\"]\n".format(node.payload.id, node.payload.content)
   }
 }
 
@@ -101,7 +101,7 @@ trait DrawIOGraphFactory extends GraphFactory[ElementInfo, ElementInfo] {
   }
 }
 
-case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, ElementInfo] with DrawIOGraphFactory {
+case class DrawIOModalParser(val file: File, val isMCC: Boolean) extends ModelParser[ElementInfo, ElementInfo] with DrawIOGraphFactory {
   // /home/lanyitin/Projects/Mega/doc/05-%E5%8A%9F%E8%83%BD%E9%9C%80%E6%B1%82%E8%A6%8F%E6%A0%BC%E6%9B%B8/20%20%E6%B5%81%E7%A8%8B%E5%9C%96/00%20%E7%99%BB%E5%87%BA%E5%85%A5%E9%A6%96%E9%A0%81/MB-%E5%BF%AB%E9%80%9F%E7%99%BB%E5%85%A5.xml
   val reader = new SAXReader();
   // val logger = LoggerFactory.getLogger(this.getClass)
@@ -154,7 +154,7 @@ case class DrawIOModalParser(val file: File) extends ModelParser[ElementInfo, El
             import collection.JavaConverters._
             import scala.language.implicitConversions
             val nodeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@vertex=\"1\"]").asInstanceOf[java.util.List[Element]].asScala
-              .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0") == null)
+              .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
               .toList
               val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
               val noEndEdge = edgeElements.filter(elem => elem.attributeValue("source") == null || elem.attributeValue("target") == null)
@@ -220,7 +220,7 @@ object Main {
         this.logger.trace("prepare graph")
         // var file = new File("/home/lanyitin/Projects/Mega/doc/05-功能需求規格書/20 流程圖/00 登出入首頁/MB-快速登入.xml")
         val file = new File(argv.getOptionValue("model"))
-        val parser = DrawIOModalParser(file)
+        val parser = DrawIOModalParser(file, argv.hasOption("mcc"))
         parser.parseGraph.map(g => parser.transformation(g))
           .foreach(graph => {
             val graphFile = new File(file.getParentFile.getAbsolutePath, "graph.dot")
@@ -260,6 +260,7 @@ object Main {
 
     // add t option
     options.addOption("m", "model", true, "path of model file");
+    options.addOption("M", "mcc", false, "enable multiple condition coverage")
 
     val parser: CommandLineParser = new PosixParser();
 

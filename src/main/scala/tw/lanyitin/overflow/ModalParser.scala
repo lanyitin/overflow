@@ -91,7 +91,7 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
 
   def parseGraph: Set[Graph[V, U]]
   def expr2Node(expr: Expression): Node[V]
-
+  def isMCC: Boolean
   def isTruePath(edge: DirectedEdge[V, U]): Boolean
   def isFalsePath(edge: DirectedEdge[V, U]): Boolean
   def extractExpression(node: Node[V]): String
@@ -126,23 +126,34 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
             )
           }
           case BooleanOrToken => {
-            val expr1Inverse = Helper.inverse(expr1)
-            val expr2Inverse = Helper.inverse(expr2)
-
             val expr1Path = this.exprToPaths(expr1).filter(x => x.truthy == true)
             val expr2Path = this.exprToPaths(expr2).filter(x => x.truthy == true)
+            
+            val expr1Inverse = Helper.inverse(expr1)
+            val expr2Inverse = Helper.inverse(expr2)
             val expr1InversePath = this.exprToPaths(expr1Inverse).map(x => x.copy(truthy = false))
             val expr2InversePath = this.exprToPaths(expr2Inverse).map(x => x.copy(truthy = false))
+            if (this.isMCC) {
+              this.logger.trace(s"expr1 paths: ${expr1Path ++ expr1InversePath}")
+              this.logger.trace(s"expr2 paths: ${expr2Path ++ expr2InversePath}")
+              this.logger.trace("\n")
 
-            this.logger.trace(s"expr1 paths: ${expr1Path ++ expr1InversePath}")
-            this.logger.trace(s"expr2 paths: ${expr2Path ++ expr2InversePath}")
-            this.logger.trace("\n")
-
-            this.productOfTwoSemiPathLists(
-              expr1Path ++ expr1InversePath,
-              expr2Path ++ expr2InversePath,
-              SemiPathOps.or
-            )         
+              this.productOfTwoSemiPathLists(
+                expr1Path ++ expr1InversePath,
+                expr2Path ++ expr2InversePath,
+                SemiPathOps.or
+              ) 
+            } else {
+              this.productOfTwoSemiPathLists(
+                expr1Path,
+                expr2Path,
+                SemiPathOps.or
+              ) ++ this.productOfTwoSemiPathLists(
+                expr1InversePath,
+                expr2InversePath,
+                SemiPathOps.and
+              )
+            }       
           }
           case default => List(SemiPath(List(this.expr2Node(expr)), truthy))
         }
