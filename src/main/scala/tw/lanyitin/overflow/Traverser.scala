@@ -47,6 +47,14 @@ case class QueueFrontier[V]() extends TraversalFrontier[V] {
   def length = this.queue.length
 }
 
+
+object TraversalFrontierFactroy {
+  def getTraversalFrontier[V](name: String): TraversalFrontier[V] = name match {
+    case "bfs" => QueueFrontier()
+    case "dfs" => StackFrontier()
+  }
+}
+
 class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFrontier[Path[V, U]], val critorion: CoverageCriterion[V, U]) {
   val logger: Logger = LoggerFactory.getLogger(this.getClass)
   val beginNodes = this.graph.beginNodes
@@ -93,74 +101,5 @@ class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFronti
       }
     }
     result
-  }
-}
-
-
-sealed trait CoverageCriterion[V, U] {
-  def graph: Graph[V,U]
-  def addVisitPath(path: Path[V, U]): Unit
-  def isMeetCriterion: Boolean
-  def isVisited(path: Path[V, U]): Boolean
-}
-
-case class AllNodeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U] {
-  val logger = LoggerFactory.getLogger(this.getClass)
-  var visitedNodes: Set[Node[V]] = Set();
-  var visitedPath: Set[Path[V, U]] = Set();
-  def addVisitPath(path: Path[V, U]): Unit = {
-    this.visitedPath = this.visitedPath + path
-    this.visitedNodes = this.visitedNodes | path.edges.flatMap(edge => Set(edge.from, edge.to)).toSet
-  }
-
-  def isMeetCriterion: Boolean = {
-    this.logger.trace("visited nodes: " + this.visitedNodes)
-    this.logger.trace("target nodes: " + graph.nodes)
-    this.visitedNodes.equals(graph.nodes)
-  }
-
-  def isVisited(path: Path[V, U]): Boolean = {
-    this.visitedPath.contains(path)
-  }
-}
-
-case class AllEdgeCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U] {
-  val logger = LoggerFactory.getLogger(this.getClass)
-  var visitedEdges: Set[DirectedEdge[V, U]] = Set()
-  var visitedPath: Set[Path[V, U]] = Set();
-  val targetEdges = graph.directedEdges | graph.undirectedEdges.flatMap(edge => {
-    Set(DirectedEdge(edge.node1, edge.node2, edge.annotation), DirectedEdge(edge.node2, edge.node1, edge.annotation))
-  })
-  def addVisitPath(path: Path[V, U]): Unit = {
-    this.visitedPath = this.visitedPath + path
-    this.visitedEdges = this.visitedEdges | path.edges.toSet
-  }
-
-  def isMeetCriterion: Boolean = {
-    this.logger.trace("visited edges: " + this.visitedEdges)
-    this.logger.trace("target edges: " + this.targetEdges)
-    this.logger.trace("missing edge: ", this.targetEdges -- this.visitedEdges)
-    this.visitedEdges.equals(this.targetEdges)
-  }
-
-  def isVisited(path: Path[V, U]): Boolean = {
-    this.visitedPath.contains(path)
-  }
-}
-
-case class AllPathCriterion[V, U](val graph: Graph[V,U]) extends CoverageCriterion[V, U] {
-  val logger = LoggerFactory.getLogger(this.getClass)
-  var visitedPath: Set[Path[V, U]] = Set();
-
-  def addVisitPath(path: Path[V, U]): Unit = {
-    this.visitedPath = this.visitedPath + path
-  }
-
-  def isMeetCriterion: Boolean = {
-    false
-  }
-
-  def isVisited(path: Path[V, U]): Boolean = {
-    this.visitedPath.contains(path)
   }
 }

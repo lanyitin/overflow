@@ -186,9 +186,9 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
       val beginNode = this.pseudoNode
       val incomeToBegin = originIncomeEdge.map(edge => DirectedEdge(edge.from, beginNode, edge.annotation))
       if (this.isBranchNode(node, originGraph)) {
-        this.logger.trace(s"${node} is a branch")
+        this.logger.debug(s"${node} is a branch")
         val semiPaths = this.exprToPaths(expr)
-
+        this.logger.debug(s"paths: ${semiPaths}")
         val truthyPath = (for {
           outTrue <- originOutgoingEdge.filter(this.isTruePath);
           exprTrue <- semiPaths.filter(p => p.truthy)
