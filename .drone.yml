@@ -1,0 +1,28 @@
+kind: pipeline
+name: default
+
+steps:
+- name: build
+  image: 1science/sbt:0.13.8-oracle-jre-8
+  volumes:
+    - name: local-ivy-volume
+      path: /data/.ivy2
+  commands:
+  - sbt clean test publishLocal -Dsbt.ivy.home=/data/.ivy2
+  when:
+    local: true
+
+- name: notify
+  image: plugins/slack
+  settings:
+    room: build-bot
+    webhook:
+      from_secret: SLACK_WEBHOOK
+  when:
+    status: [ success, failure ]
+    local: false
+
+volumes:
+  - name: local-ivy-volume
+    host:
+      path: /home/lanyitin/.ivy2
