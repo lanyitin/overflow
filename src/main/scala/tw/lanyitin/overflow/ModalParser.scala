@@ -1,10 +1,9 @@
 package tw.lanyitin.overflow
 
-import org.slf4j.LoggerFactory
-
+import org.slf4j.{Logger, LoggerFactory}
 import tw.lanyitin.huevo.parse._
-import tw.lanyitin.huevo.lex.Scanner
-import tw.lanyitin.common.ast.Token
+import tw.lanyitin.huevo.lex.{Scanner, ScannerBuilder, ScannerState}
+import tw.lanyitin.common.ast.{BooleanLiteralExpression, Expression, FieldCallExpression, FloatLiteralExpression, FunctionCallExpression, IdentifierExpression, IntegerLiteralExpression, OperationCallExpression, Token}
 import tw.lanyitin.common.ast.TokenType._
 import tw.lanyitin.common.graph.Graph
 import tw.lanyitin.common.graph.DirectedEdge
@@ -13,32 +12,32 @@ import tw.lanyitin.common.graph.Edge
 import tw.lanyitin.common.graph.Node
 import tw.lanyitin.common.graph.GraphFactory
 import tw.lanyitin.common.parser.ParseResult
-import tw.lanyitin.common.ast.OperationCallExpression
-import tw.lanyitin.common.ast.BooleanLiteralExpression
 import tw.lanyitin.common.ast.TokenType.BooleanConstantToken
-import tw.lanyitin.common.ast.IdentifierExpression
-import tw.lanyitin.common.ast.Expression
-import tw.lanyitin.common.ast.FunctionCallExpression
-import tw.lanyitin.common.ast.FloatLiteralExpression
-import tw.lanyitin.common.ast.IntegerLiteralExpression
-import scala.util.{Try, Success, Failure}
 
+import scala.collection.mutable
+import scala.util.{Failure, Success, Try}
+
+case class Config(val model: String, val mcc: Boolean, val criterion: String, val traverse: String, mergeEquivalentEdges: Boolean)
 
 object Helper {
-  def inverse(expr: Expression): Expression = {
-    expr match  {
-      case IdentifierExpression(_, _) | FunctionCallExpression(_, _) => OperationCallExpression(Token(EqualToken, EqualToken.toString, 0, 0), expr, BooleanLiteralExpression(Token(BooleanConstantToken, "false", 0, 0), false))
-      case OperationCallExpression(token, expr1, expr2) => {
-        token.tokenType match {
-          case BooleanAndToken => OperationCallExpression(Token(BooleanOrToken, "or", 0, 0), inverse(expr1), inverse(expr2))
-          case BooleanOrToken => OperationCallExpression(Token(BooleanAndToken, "and", 0, 0), inverse(expr1), inverse(expr2))
-          case GreaterEqualToken  => OperationCallExpression(Token(LessToken, "<", 0, 0), expr1, expr2)
-          case LessEqualToken  => OperationCallExpression(Token(GreaterToken, ">", 0, 0), expr1, expr2)
-          case NotEqualToken  => OperationCallExpression(Token(EqualToken, "==", 0, 0), expr1, expr2)
-          case EqualToken => OperationCallExpression(Token(NotEqualToken, "!=", 0, 0), expr1, expr2)
-          case GreaterToken  => OperationCallExpression(Token(LessEqualToken, "<=", 0, 0), expr1, expr2)
-          case LessToken  => OperationCallExpression(Token(GreaterEqualToken, ">=", 0, 0), expr1, expr2)
-        }
+  def inverse(expr: Expression): Expression = expr match  {
+    case IdentifierExpression(_, _) | FunctionCallExpression(_, _) | FieldCallExpression(_, _) => OperationCallExpression(Token(EqualToken, EqualToken.toString, 0, 0), expr, BooleanLiteralExpression(Token(BooleanConstantToken, "false", 0, 0), false))
+    case OperationCallExpression(token, expr1, expr2) =>
+      token.tokenType match {
+        case BooleanAndToken => OperationCallExpression(Token(BooleanOrToken, "or", 0, 0), inverse(expr1), inverse(expr2))
+        case BooleanOrToken => OperationCallExpression(Token(BooleanAndToken, "and", 0, 0), inverse(expr1), inverse(expr2))
+        case GreaterEqualToken  => OperationCallExpression(Token(LessToken, "<", 0, 0), expr1, expr2)
+        case LessEqualToken  => OperationCallExpression(Token(GreaterToken, ">", 0, 0), expr1, expr2)
+        case NotEqualToken  => OperationCallExpression(Token(EqualToken, "==", 0, 0), expr1, expr2)
+        case EqualToken => OperationCallExpression(Token(NotEqualToken, "!=", 0, 0), expr1, expr2)
+        case GreaterToken  => OperationCallExpression(Token(LessEqualToken, "<=", 0, 0), expr1, expr2)
+        case LessToken  => OperationCallExpression(Token(GreaterEqualToken, ">=", 0, 0), expr1, expr2)
+      }
+    case BooleanLiteralExpression(token, value) => {
+      if (value) {
+        BooleanLiteralExpression(Token(BooleanConstantToken, "false", token.line, token.col), false)
+      } else {
+        BooleanLiteralExpression(Token(BooleanConstantToken, "true", token.line, token.col), true)
       }
     }
   }
@@ -49,13 +48,84 @@ object Helper {
       case IntegerLiteralExpression(_, value) => value.toString
       case FloatLiteralExpression(_, value) => value.toString
       case IdentifierExpression(token, _) => token.txt
-      case FunctionCallExpression(func, parameters @_*) => {
+      case FieldCallExpression(source, field) => s"${exprToStr(source)}.${field.token.txt}"
+      case FunctionCallExpression(func, parameters @_*) =>
         s"${func.token.txt}(${parameters.map(this.exprToStr).mkString(", ")})"
-      }
-      case OperationCallExpression(token, expr1, expr2) => {
+
+      case OperationCallExpression(token, expr1, expr2) =>
         s"(${this.exprToStr(expr1)} ${token.txt} ${this.exprToStr(expr2)})"
-      }
     }
+  }
+
+  def loopDetection[V, U](graph: Graph[V, U]): Set[List[Node[V]]] = {
+    // index := 0
+    var index = 0
+    // S := empty stack
+    val stack : mutable.Stack[Node[V]] = mutable.Stack()
+    val indexMap: mutable.Map[Node[V], Int] = mutable.Map()
+    val lowLinkMap: mutable.Map[Node[V], Int] = mutable.Map()
+    val strongConnectedNodes: mutable.Set[Node[V]] = mutable.Set()
+
+
+    def strongconnect(node: Node[V]): Unit = {
+      // // Set the depth index for v to the smallest unused index
+      // v.index := index
+      indexMap.put(node, index)
+      // v.lowlink := index
+      lowLinkMap.put(node, index)
+      // index := index + 1
+      index = index + 1
+      // S.push(v)
+      stack.push(node)
+      // v.onStack := true
+
+      // // Consider successors of v
+      // for each (v, w) in E do
+      for (edge <- graph.edges.map(_.extractData).filter(_._1 == node)) {
+      // if (w.index is undefined) then
+        if (indexMap.get(edge._2).isEmpty) {
+          // // Successor w has not yet been visited; recurse on it
+          // strongconnect(w)
+          strongconnect(edge._2)
+          // v.lowlink  := min(v.lowlink, w.lowlink)
+          lowLinkMap.put(node, Math.min(lowLinkMap(node), lowLinkMap(edge._2)))
+        } else if (stack.contains(edge._2)) {
+          // else if (w.onStack) then
+          // // Successor w is in stack S and hence in the current SCC
+          // // If w is not on stack, then (v, w) is a cross-edge in the DFS tree and must be ignored
+          // // Note: The next line may look odd - but is correct.
+          // // It says w.index not w.lowlink; that is deliberate and from the original paper
+          // v.lowlink  := min(v.lowlink, w.index)
+          lowLinkMap.put(node, Math.min(lowLinkMap(node), lowLinkMap(edge._2)))
+        }
+      }
+      // // If v is a root node, pop the stack and generate an SCC
+      //if (v.lowlink = v.index) then
+      if (lowLinkMap(node) == indexMap(node)) {
+        //  start a new strongly connected component
+        var anotherNode = stack.pop()
+        strongConnectedNodes.add(anotherNode)
+        while (!stack.isEmpty && anotherNode != node) {
+          anotherNode = stack.pop
+          strongConnectedNodes.add(anotherNode)
+        }
+      }
+      //end if
+    }
+
+    // for each v in V do
+    for (node <- graph.nodes) {
+      // if (v.index is undefined) then
+      if (indexMap.get(node).isEmpty) {
+        //  strongconnect(v)
+        strongconnect(node)
+      }
+      // end if
+    }
+    // end for
+    strongConnectedNodes.groupBy(lowLinkMap(_)).values.filter(loop => loop.size > 1)
+      .map(loop => loop.map(n => (n, indexMap(n))).toList.sortBy(_._2).map(x => x._1))
+      .toSet
   }
 }
 
@@ -86,21 +156,31 @@ object SemiPathOps {
 
 
 trait ModelParser[V, U] { self: GraphFactory[V, U] =>
-  val logger = LoggerFactory.getLogger(this.getClass)
-  def exprToStr(expr: Expression) = Helper.exprToStr(expr)
+  private val logger: Logger = LoggerFactory.getLogger(this.getClass)
 
+  // abstract methods
+  def config: Config
   def parseGraph: Set[Graph[V, U]]
   def expr2Node(expr: Expression): Node[V]
-  def isMCC: Boolean
   def isTruePath(edge: DirectedEdge[V, U]): Boolean
   def isFalsePath(edge: DirectedEdge[V, U]): Boolean
   def extractExpression(node: Node[V]): String
-  def parseExpression(str: String): Try[Expression] = {
-    Parsers.parse_boolean_expression(Scanner(str)) match {
-      case Right(ParseResult(state, result)) => Success(result)
-      case Left(errors) => Failure(new Exception(errors.mkString("\n")))
-    };
+  def exprToStr(expr: Expression): String = Helper.exprToStr(expr)
+
+  def mergeEquivalentEdges(edges: Set[Edge[V, U]]): Set[Edge[V, U]]
+  def filterOutNoConnectedNodes(nodes: Set[Node[V]], edges: Set[Edge[V, U]]): Set[Node[V]]
+
+  private def scanner(txt: String): Scanner = {
+    val tokenizers = Scanner.huevoTokenizers
+    ScannerBuilder(tokenizers).normalMode(txt, ScannerState(0, 0, 0))
   }
+  def parseExpression(str: String): Try[Expression] = {
+    Parsers.parse_expression(scanner(str)) match {
+      case Right(ParseResult(_, result)) => Success(result)
+      case Left(errors) => Failure(new Exception(errors.mkString("\n")))
+    }
+  }
+
 
   def isBranchNode(node: Node[V], g: Graph[V, U]): Boolean = {
     val outgoingEdges = g.outgoingEdges(node)
@@ -109,7 +189,7 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
 
   private def productOfTwoSemiPathLists(p1: List[SemiPath[V]], p2: List[SemiPath[V]], op: (SemiPath[V], SemiPath[V]) => SemiPath[V]): List[SemiPath[V]] = {
     for {
-      path1 <- p1;
+      path1 <- p1
       path2 <- p2
     } yield op(path1, path2)
   }
@@ -117,122 +197,131 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
   def exprToPaths(expr: Expression, truthy: Boolean = true): List[SemiPath[V]] = {
     val result = expr match {
       case OperationCallExpression(token, expr1, expr2) => {
+
         token.tokenType match {
           case BooleanAndToken => {
-            productOfTwoSemiPathLists(
-              this.exprToPaths(expr1),
-              this.exprToPaths(expr2),
-              SemiPathOps.and
-            )
-          }
-          case BooleanOrToken => {
-            val expr1Path = this.exprToPaths(expr1).filter(x => x.truthy == true)
-            val expr2Path = this.exprToPaths(expr2).filter(x => x.truthy == true)
-            
             val expr1Inverse = Helper.inverse(expr1)
             val expr2Inverse = Helper.inverse(expr2)
             val expr1InversePath = this.exprToPaths(expr1Inverse).map(x => x.copy(truthy = false))
             val expr2InversePath = this.exprToPaths(expr2Inverse).map(x => x.copy(truthy = false))
-            if (this.isMCC) {
-              this.logger.trace(s"expr1 paths: ${expr1Path ++ expr1InversePath}")
-              this.logger.trace(s"expr2 paths: ${expr2Path ++ expr2InversePath}")
-              this.logger.trace("\n")
-
-              this.productOfTwoSemiPathLists(
-                expr1Path ++ expr1InversePath,
-                expr2Path ++ expr2InversePath,
-                SemiPathOps.or
-              ) 
-            } else {
-              this.productOfTwoSemiPathLists(
-                expr1Path,
-                expr2Path,
-                SemiPathOps.or
-              ) ++ this.productOfTwoSemiPathLists(
-                expr1InversePath,
-                expr2InversePath,
-                SemiPathOps.and
-              )
-            }       
+            productOfTwoSemiPathLists(
+              this.exprToPaths(expr1),
+              this.exprToPaths(expr2),
+              SemiPathOps.and
+            ) ++ productOfTwoSemiPathLists(
+              this.exprToPaths(expr1),
+              expr2InversePath,
+              SemiPathOps.and
+            ) ++ productOfTwoSemiPathLists(
+              expr1InversePath,
+              this.exprToPaths(expr2),
+              SemiPathOps.and
+            ) ++ productOfTwoSemiPathLists(
+              expr1InversePath,
+              expr2InversePath,
+              SemiPathOps.and
+            )
           }
-          case default => List(SemiPath(List(this.expr2Node(expr)), truthy))
+          case BooleanOrToken => {
+            val expr1Inverse = Helper.inverse(expr1)
+            val expr2Inverse = Helper.inverse(expr2)
+            val expr1Path = this.exprToPaths(expr1).filter(x => x.truthy)
+            val expr2Path = this.exprToPaths(expr2).filter(x => x.truthy)
+
+            val expr1InversePath = this.exprToPaths(expr1Inverse).map(x => x.copy(truthy = false))
+            val expr2InversePath = this.exprToPaths(expr2Inverse).map(x => x.copy(truthy = false))
+            this.logger.trace(s"expr1 paths: ${expr1Path ++ expr1InversePath}")
+            this.logger.trace(s"expr2 paths: ${expr2Path ++ expr2InversePath}")
+            this.logger.trace("\n")
+
+            this.productOfTwoSemiPathLists(
+              expr1Path ++ expr1InversePath,
+              expr2Path ++ expr2InversePath,
+              SemiPathOps.or
+            )
+          }
+          case _ => List(SemiPath(List(this.expr2Node(expr)), truthy))
         }
       }
-      case default => List(SemiPath(List(this.expr2Node(expr)), truthy))
+      case _ => List(SemiPath(List(this.expr2Node(expr)), truthy))
     }
     result
   }
 
   private def makeRealPath(path: SemiPath[V]): Path[V, U] = {
-    // to make sure each node has uniqure id
-    val duplicatePath = SemiPath(path.nodes.map(this.duplicateNode(_)), path.truthy)
+    // to make sure each node has unique id
+    val duplicatePath = SemiPath(path.nodes.map(this.duplicateNode), path.truthy)
 
     Path(duplicatePath.nodes.zip(duplicatePath.nodes.tail)
       .map(pair => {
-        this.logger.trace(s"pair ${pair}")
+        this.logger.trace(s"pair $pair")
         this.pseudoEdge(pair._1, pair._2).asInstanceOf[DirectedEdge[V, U]]
       }))
   }
 
   def expendExpression(node: Node[V], originGraph: Graph[V, U]): Graph[V, U] = {
     val str = this.extractExpression(node)
-    val parseResult = this.parseExpression(str)
-    if (!parseResult.isSuccess) {
+    if (str == null || str.length == 0) {
       originGraph
     } else {
-      val originOutgoingEdge = originGraph.outgoingEdges(node)
-      val originIncomeEdge = originGraph.incomingEdges(node)
-      val expr = parseResult.get
-      val beginNode = this.pseudoNode
-      val incomeToBegin = originIncomeEdge.map(edge => DirectedEdge(edge.from, beginNode, edge.annotation))
-      if (this.isBranchNode(node, originGraph)) {
-        this.logger.debug(s"${node} is a branch")
-        val semiPaths = this.exprToPaths(expr)
-        this.logger.debug(s"paths: ${semiPaths}")
-        val truthyPath = (for {
-          outTrue <- originOutgoingEdge.filter(this.isTruePath);
-          exprTrue <- semiPaths.filter(p => p.truthy)
-        } yield {
-          val realPath = this.makeRealPath(exprTrue)
-          this.logger.trace(s"realPath ${realPath}")
-
-          val beginToPath = this.pseudoEdge(beginNode, realPath.edges.head.from)
-          this.logger.trace(s"beginToPath ${beginToPath}")
-          val exprToOut = this.pseudoEdge(realPath.edges.last.to, outTrue.to)
-          this.logger.trace(s"exprToOut ${exprToOut}")
-          List(beginToPath, exprToOut) ++ realPath.edges
-        }).flatten
-        val falsePath = (for {
-          outTrue <- originOutgoingEdge.filter(this.isFalsePath);
-          exprTrue <- semiPaths.filter(p => !p.truthy)
-        } yield {
-          val realPath = this.makeRealPath(exprTrue)
-          this.logger.trace(s"realPath ${realPath}")
-
-          val beginToPath = this.pseudoEdge(beginNode, realPath.edges.head.from)
-          this.logger.trace(s"beginToPath ${beginToPath}")
-          val exprToOut = this.pseudoEdge(realPath.edges.last.to, outTrue.to)
-          this.logger.trace(s"exprToOut ${exprToOut}")
-          List(beginToPath, exprToOut) ++ realPath.edges
-        }).flatten
-
-        val newNodes: Set[Node[V]] = (originGraph.nodes ++
-          truthyPath.map(edge => {
-            val (from, to, _) = edge.extractData
-            Set(from, to)
-          }).flatten ++
-          falsePath.map(edge => {
-            val (from, to, _) = edge.extractData
-            Set(from, to)
-          }).flatten) - node + beginNode
-        val newEdges: Set[Edge[V, U]] = (((originGraph.edges -- originIncomeEdge) -- originOutgoingEdge) ++ truthyPath) ++ falsePath ++ incomeToBegin
-        Graph(newNodes, newEdges)
+      val parseResult = this.parseExpression(str)
+      if (!parseResult.isSuccess) {
+        this.logger.debug(parseResult.failed.get.toString)
+        originGraph
       } else {
-        val semiPaths = this.exprToPaths(expr)
+        val originOutgoingEdge = originGraph.outgoingEdges(node)
+        val originIncomeEdge = originGraph.incomingEdges(node)
+        val expr = parseResult.get
+        val beginNode = this.pseudoNode
+        val incomeToBegin = originIncomeEdge.map(edge => DirectedEdge(edge.from, beginNode, edge.annotation))
+        if (this.isBranchNode(node, originGraph)) {
+          this.logger.debug(s"$node is a branch")
+          val semiPaths = this.exprToPaths(expr)
+          this.logger.debug(s"paths from expr: ${expr} ${semiPaths}")
+          val truthyPath = (for {
+            outTrue <- originOutgoingEdge.filter(this.isTruePath)
+            exprTrue <- semiPaths.filter(p => p.truthy)
+          } yield {
+            val realPath = this.makeRealPath(exprTrue)
+            this.logger.trace(s"realPath ${realPath}")
 
-        val truthyPath = (for {
-          outTrue <- originOutgoingEdge;
-          exprTrue <- semiPaths
+            val beginToPath = this.pseudoEdge(beginNode, realPath.edges.head.from)
+            this.logger.trace(s"beginToPath ${beginToPath}")
+            val exprToOut = this.pseudoEdge(realPath.edges.last.to, outTrue.to)
+            this.logger.trace(s"exprToOut ${exprToOut}")
+            List(beginToPath, exprToOut) ++ realPath.edges
+          }).flatten
+          val falsePath = (for {
+            outTrue <- originOutgoingEdge.filter(this.isFalsePath);
+            exprTrue <- semiPaths.filter(p => !p.truthy)
+          } yield {
+            val realPath = this.makeRealPath(exprTrue)
+            this.logger.trace(s"realPath ${realPath}")
+
+            val beginToPath = this.pseudoEdge(beginNode, realPath.edges.head.from)
+            this.logger.trace(s"beginToPath ${beginToPath}")
+            val exprToOut = this.pseudoEdge(realPath.edges.last.to, outTrue.to)
+            this.logger.trace(s"exprToOut ${exprToOut}")
+            List(beginToPath, exprToOut) ++ realPath.edges
+          }).flatten
+
+          val newNodes: Set[Node[V]] = (originGraph.nodes ++
+            truthyPath.map(edge => {
+              val (from, to, _) = edge.extractData
+              Set(from, to)
+            }).flatten ++
+            falsePath.map(edge => {
+              val (from, to, _) = edge.extractData
+              Set(from, to)
+            }).flatten) - node + beginNode
+          val newEdges: Set[Edge[V, U]] = (((originGraph.edges -- originIncomeEdge) -- originOutgoingEdge) ++ truthyPath) ++ falsePath ++ incomeToBegin
+          Graph(newNodes, newEdges)
+        } else {
+          val semiPaths = this.exprToPaths(expr)
+
+          val truthyPath = (for {
+            outTrue <- originOutgoingEdge;
+            exprTrue <- semiPaths
           } yield {
             val realPath = this.makeRealPath(exprTrue)
             val beginToPath = this.pseudoEdge(beginNode, realPath.edges.head.from)
@@ -241,18 +330,34 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
           }).flatten
 
 
-        val newNodes: Set[Node[V]] = (originGraph.nodes ++
-          truthyPath.map(edge => {
-            val (from, to, _) = edge.extractData
-            Set(from, to)
-          }).flatten) - node
-        val newEdges: Set[Edge[V, U]] = (((originGraph.edges -- originIncomeEdge) -- originOutgoingEdge) ++ truthyPath) ++ incomeToBegin
-        Graph(newNodes, newEdges)
+          val newNodes: Set[Node[V]] = (originGraph.nodes ++
+            truthyPath.map(edge => {
+              val (from, to, _) = edge.extractData
+              Set(from, to)
+            }).flatten) - node
+          val newEdges: Set[Edge[V, U]] = (((originGraph.edges -- originIncomeEdge) -- originOutgoingEdge) ++ truthyPath) ++ incomeToBegin
+          Graph(newNodes, newEdges)
+        }
       }
     }
   }
 
-  def transformation(graph: Graph[V, U]): Graph[V, U] = {
-    graph.nodes.map(node => GraphModification(g => {this.expendExpression(node, g)})).foldLeft(GraphModificationOps.unit[V, U])(GraphModificationOps.chain[V, U]).run(graph)
+  def transformation(graph: Graph[V, U]): Graph[V, U] =
+  {
+
+    val postProcessedEdges = if (this.config.mergeEquivalentEdges) {
+      this.mergeEquivalentEdges(graph.edges)
+    } else {
+      graph.edges
+    }
+
+    val postProcessedNodes = this.filterOutNoConnectedNodes(graph.nodes, postProcessedEdges)
+
+
+    val newGraph = Graph(postProcessedNodes, postProcessedEdges)
+
+    newGraph.nodes.map(node => GraphModification(g => {this.expendExpression(node, g)})).foldLeft(GraphModificationOps.unit[V, U])(GraphModificationOps.chain[V, U]).run(graph)
   }
+
+  def loops(graph: Graph[V, U]): Set[List[Node[V]]] = Helper.loopDetection[V, U](graph)
 }

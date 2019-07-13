@@ -1,0 +1,5 @@
+model: "src/test/resources/otp.xml"
+mcc: true
+traverse: "bfs"
+criterion: "all-path"
+mergeEquivalentEdges: true

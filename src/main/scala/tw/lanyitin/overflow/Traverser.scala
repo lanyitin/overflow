@@ -55,7 +55,7 @@ object TraversalFrontierFactroy {
   }
 }
 
-class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFrontier[Path[V, U]], val critorion: CoverageCriterion[V, U]) {
+class PathEnumerator[V, U](val graph: Graph[V, U], val loops: Set[List[Node[V]]], val frontier: TraversalFrontier[Path[V, U]], val critorion: CoverageCriterion[V, U]) {
   val logger: Logger = LoggerFactory.getLogger(this.getClass)
   val beginNodes = this.graph.beginNodes
   val endNodes = this.graph.endNodes
@@ -71,6 +71,7 @@ class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFronti
   })
 
   def nextPath: Path[V,U] = {
+    val beginOfLoops = loops.map(_.head)
     var result: Path[V,U] = null
     this.logger.trace("frontier length: " + frontier.length)
     this.logger.trace("isMeetCriterion: " + this.critorion.isMeetCriterion)
@@ -93,8 +94,17 @@ class PathEnumerator[V, U](val graph: Graph[V, U], val frontier: TraversalFronti
             val newPath = Path(edge :: candicate.edges)
             val newPathTruth = Path(newPath.edges.reverse)
             if (!this.critorion.isVisited(newPathTruth)) {
-              this.frontier.add(newPath)
-              this.logger.trace("found new path candicate:" + Path(newPath.edges.reverse))
+              if (beginOfLoops.contains(edge.to)) {
+                val currentPath = candicate.edges.reverse.head.from :: candicate.edges.reverse.head.to :: candicate.edges.reverse.tail.map(_.to)
+                val hasLoop = loops.foldRight(false)((iteration, result) => currentPath.containsSlice(iteration) || result)
+                if (!hasLoop) {
+                  this.frontier.add(newPath)
+                  this.logger.trace("found new path candicate:" + Path(newPath.edges.reverse))
+                }
+              } else {
+                this.frontier.add(newPath)
+                this.logger.trace("found new path candicate:" + Path(newPath.edges.reverse))
+              }
             }
           })
         }
