@@ -1,5 +1,5 @@
-model: "src/test/resources/otp.xml"
+model: "src/test/resources/sample.xml"
 mcc: true
 traverse: "bfs"
-criterion: "all-path"
+criterion: "all-edge"
 mergeEquivalentEdges: true

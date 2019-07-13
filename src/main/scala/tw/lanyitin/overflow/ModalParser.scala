@@ -3,7 +3,7 @@ package tw.lanyitin.overflow
 import org.slf4j.{Logger, LoggerFactory}
 import tw.lanyitin.huevo.parse._
 import tw.lanyitin.huevo.lex.{Scanner, ScannerBuilder, ScannerState}
-import tw.lanyitin.common.ast.{BooleanLiteralExpression, Expression, FieldCallExpression, FloatLiteralExpression, FunctionCallExpression, IdentifierExpression, IntegerLiteralExpression, OperationCallExpression, Token}
+import tw.lanyitin.common.ast.{BooleanLiteralExpression, Expression, ExprsBlock, FieldCallExpression, FloatLiteralExpression, FunctionCallExpression, IdentifierExpression, IntegerLiteralExpression, OperationCallExpression, Token}
 import tw.lanyitin.common.ast.TokenType._
 import tw.lanyitin.common.graph.Graph
 import tw.lanyitin.common.graph.DirectedEdge
@@ -175,8 +175,10 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
     ScannerBuilder(tokenizers).normalMode(txt, ScannerState(0, 0, 0))
   }
   def parseExpression(str: String): Try[Expression] = {
-    Parsers.parse_expression(scanner(str)) match {
-      case Right(ParseResult(_, result)) => Success(result)
+    Parsers.parse_program(scanner(str)) match {
+      case Right(ParseResult(_, result)) => result match {
+        case ExprsBlock(exprs) => Success(exprs.head)
+      }
       case Left(errors) => Failure(new Exception(errors.mkString("\n")))
     }
   }
@@ -194,51 +196,56 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
     } yield op(path1, path2)
   }
 
+  def isBooleanOrExpression(expr: Expression): Boolean = {
+    expr match {
+      case OperationCallExpression(token, _, _) => token.tokenType == BooleanOrToken
+      case _ => false
+    }
+  }
+
+  def isBooleanAndExpression(expr: Expression): Boolean = {
+    expr match {
+      case OperationCallExpression(token, _, _) => token.tokenType == BooleanAndToken
+      case _ => false
+    }
+  }
+
   def exprToPaths(expr: Expression, truthy: Boolean = true): List[SemiPath[V]] = {
     val result = expr match {
       case OperationCallExpression(token, expr1, expr2) => {
-
         token.tokenType match {
-          case BooleanAndToken => {
+          case BooleanAndToken | BooleanOrToken => {
             val expr1Inverse = Helper.inverse(expr1)
             val expr2Inverse = Helper.inverse(expr2)
-            val expr1InversePath = this.exprToPaths(expr1Inverse).map(x => x.copy(truthy = false))
-            val expr2InversePath = this.exprToPaths(expr2Inverse).map(x => x.copy(truthy = false))
-            productOfTwoSemiPathLists(
-              this.exprToPaths(expr1),
-              this.exprToPaths(expr2),
-              SemiPathOps.and
-            ) ++ productOfTwoSemiPathLists(
-              this.exprToPaths(expr1),
-              expr2InversePath,
-              SemiPathOps.and
-            ) ++ productOfTwoSemiPathLists(
-              expr1InversePath,
-              this.exprToPaths(expr2),
-              SemiPathOps.and
-            ) ++ productOfTwoSemiPathLists(
-              expr1InversePath,
-              expr2InversePath,
-              SemiPathOps.and
-            )
-          }
-          case BooleanOrToken => {
-            val expr1Inverse = Helper.inverse(expr1)
-            val expr2Inverse = Helper.inverse(expr2)
+
             val expr1Path = this.exprToPaths(expr1).filter(x => x.truthy)
             val expr2Path = this.exprToPaths(expr2).filter(x => x.truthy)
 
-            val expr1InversePath = this.exprToPaths(expr1Inverse).map(x => x.copy(truthy = false))
-            val expr2InversePath = this.exprToPaths(expr2Inverse).map(x => x.copy(truthy = false))
-            this.logger.trace(s"expr1 paths: ${expr1Path ++ expr1InversePath}")
-            this.logger.trace(s"expr2 paths: ${expr2Path ++ expr2InversePath}")
-            this.logger.trace("\n")
+            val expr1InversePath = this.exprToPaths(expr1Inverse, false).flatMap(x => {
+              if ((isBooleanOrExpression(expr1Inverse) || isBooleanAndExpression(expr1Inverse)) && x.truthy) {
+                Nil
+              } else {
+                x :: Nil
+              }
+            })
+            val expr2InversePath = this.exprToPaths(expr2Inverse, false).flatMap(x => {
+              if ((isBooleanOrExpression(expr2Inverse) || isBooleanAndExpression(expr2Inverse)) && x.truthy) {
+                Nil
+              } else {
+                x :: Nil
+              }
+            })
 
-            this.productOfTwoSemiPathLists(
+            val result = this.productOfTwoSemiPathLists(
               expr1Path ++ expr1InversePath,
               expr2Path ++ expr2InversePath,
-              SemiPathOps.or
+              if (token.tokenType == BooleanAndToken) { SemiPathOps.and } else { SemiPathOps.or}
             )
+            if (truthy) {
+              result
+            } else {
+              result.map(x => x.copy(truthy = !x.truthy))
+            }
           }
           case _ => List(SemiPath(List(this.expr2Node(expr)), truthy))
         }

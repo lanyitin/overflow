@@ -26,7 +26,10 @@ object Main {
     val traversalFrontier = Option(config.traverse).getOrElse("bfs")
 
     val graphs = parser.parseGraph
-    graphs.map(g => parser.transformation(g)).zip((1 to graphs.size).toList)
+    graphs.map(g => parser.transformation(g))
+
+    .zip((1 to graphs.size).toList)
+
     .map(iteration => {
       val (graph, idx) = iteration
       val graphFolder = new File(file.getParentFile.getAbsolutePath, s"graph${idx}")
@@ -41,15 +44,17 @@ object Main {
       val fileWriter = new FileWriter(graphFile)
       fileWriter.write(ElementInfoVisualizer.visualize(graph))
       fileWriter.close
-      (graph, idx, graphFolder, parser.loops(graph))
-    }).foreach(iteration => {
-      val (graph, idx, graphFolder, loops) = iteration
-      this.logger.trace("start path enumeration");
+      (graph, graphFolder, parser.loops(graph))
+    })
+
+    .foreach(iteration => {
+      val (graph, graphFolder, loops) = iteration
+      this.logger.trace("start path enumeration")
 
       val criterion = CoverageCriterionFactory.getCoverageCriterion(coverageCriterion, graph)
       val frontier: TraversalFrontier[Path[ElementInfo, ElementInfo]] = TraversalFrontierFactroy.getTraversalFrontier(traversalFrontier)
       val pathEnumerator: PathEnumerator[ElementInfo, ElementInfo] = new PathEnumerator[ElementInfo, ElementInfo](graph, loops, frontier, criterion)
-      var count = 0;
+      var count = 0
       while (!criterion.isMeetCriterion && frontier.length != 0) {
         println(s"\r is meet criterion ${criterion.isMeetCriterion}, frontier length: ${frontier.length}")
         val path = pathEnumerator.nextPath
