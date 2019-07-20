@@ -1,5 +1,5 @@
-model: "src/test/resources/sample.xml"
+model: "src/test/resources/path-coverage-example.xml"
 mcc: true
-traverse: "bfs"
-criterion: "all-edge"
+traverse: "dfs"
+criterion: "all-path"
 mergeEquivalentEdges: true

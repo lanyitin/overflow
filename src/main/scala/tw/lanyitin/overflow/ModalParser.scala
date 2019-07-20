@@ -160,7 +160,7 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
 
   // abstract methods
   def config: Config
-  def parseGraph: Set[Graph[V, U]]
+  def parseGraph: Set[(String, Graph[V, U])]
   def expr2Node(expr: Expression): Node[V]
   def isTruePath(edge: DirectedEdge[V, U]): Boolean
   def isFalsePath(edge: DirectedEdge[V, U]): Boolean

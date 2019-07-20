@@ -26,13 +26,9 @@ object Main {
     val traversalFrontier = Option(config.traverse).getOrElse("bfs")
 
     val graphs = parser.parseGraph
-    graphs.map(g => parser.transformation(g))
-
-    .zip((1 to graphs.size).toList)
-
-    .map(iteration => {
-      val (graph, idx) = iteration
-      val graphFolder = new File(file.getParentFile.getAbsolutePath, s"graph${idx}")
+    graphs.map(g => (g._1, parser.transformation(g._2)))
+    .map(graph => {
+      val graphFolder = new File(file.getParentFile.getAbsolutePath, graph._1)
       if (!graphFolder.exists) {
         graphFolder.mkdir
       }
@@ -42,9 +38,9 @@ object Main {
         graphFile.createNewFile
       }
       val fileWriter = new FileWriter(graphFile)
-      fileWriter.write(ElementInfoVisualizer.visualize(graph))
+      fileWriter.write(ElementInfoVisualizer.visualize(graph._2))
       fileWriter.close
-      (graph, graphFolder, parser.loops(graph))
+      (graph._2, graphFolder, parser.loops(graph._2))
     })
 
     .foreach(iteration => {

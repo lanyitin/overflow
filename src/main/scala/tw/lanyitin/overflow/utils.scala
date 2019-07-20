@@ -13,7 +13,6 @@ import tw.lanyitin.common.ast.Expression
 import tw.lanyitin.common.graph._
 
 import scala.collection.mutable
-import scala.reflect.io.File
 import scala.util.Try
 import scala.util.matching.Regex
 
@@ -108,76 +107,81 @@ case class DrawIOModalParser(config: Config) extends ModelParser[ElementInfo, El
   def extractExpression(node: Node[ElementInfo]): String =
     this.exprWrapperPattern.findAllIn(node.payload.toString).toList.map(seg => seg.replace("{{", "").replace("}}", "").replace("\n", "").replace(" ", " ").trim).mkString(" ").trim
 
-  def parseGraph: Set[Graph[ElementInfo, ElementInfo]] = {
+  def parseGraph: Set[(String, Graph[ElementInfo, ElementInfo])] = {
     val identifyMap: mutable.Map[String, String] = mutable.Map()
     val iterator = document.selectNodes("/mxfile/diagram").iterator
     val decoder = Base64.getDecoder
 
-    var diagramData: Set[String] = Set()
+    var diagramData: Set[(String, String)] = Set()
     while(iterator.hasNext) {
       val element: Element = iterator.next.asInstanceOf[Element]
-      diagramData = diagramData + element.getStringValue
+      diagramData = diagramData + ((element.attributeValue("name"), element.getStringValue))
     }
 
-    diagramData.map(data => {
-      // this.logger.trace("diagram data: " + data)
-      val result = decoder.decode(data)
-      // this.logger.trace("result: " + result.length)
-      result
-    }).map((data: Array[Byte]) => {
-      URLDecoder.decode(this.inflate(data), "UTF-8")
-    }).map(inflated => {
-      reader.read(new StringReader(inflated))
-    }).map(doc => {
-      import collection.JavaConverters._
-      import scala.language.implicitConversions
-      val nodeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@vertex=\"1\"]").asInstanceOf[java.util.List[Element]].asScala
-        .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
-        .toList
-      val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
-      val noEndEdge: List[Element] = edgeElements.filter(elem => elem.attributeValue("source") == null || elem.attributeValue("target") == null)
-      if (noEndEdge.size > 0) {
-        val represent = noEndEdge.map(edge => {
-          if (edge.attributeValue("source") != null) {
-            nodeElements
-              .filter(node => node.attributeValue("id") == edge.attributeValue("source"))
-              .map(node => node.attributeValue("value") + "-> <none>")
-          } else {
-            nodeElements
-              .filter(node => node.attributeValue("id") == edge.attributeValue("target"))
-              .map(node => "<none> -> " + node.attributeValue("value"))
-          }
-        })
-        throw new Error(represent.flatten.mkString("\n"))
-      }
-      this.logger.trace("nodes in model: " + nodeElements.length)
-      this.logger.trace("edges in model: " + edgeElements.length)
-
-      val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => {
-        val tempNode = this.pseudoNode(s"${elem.attributeValue("id")} - ${elem.attributeValue("value")}")
-        identifyMap.put(elem.attributeValue("id"), tempNode.payload.id)
-        tempNode
-      }).toSet
-      val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.map((elem: Element) => {
-        val source = nodes.find(node => node.payload.id == identifyMap(elem.attributeValue("source")))
-        val target = nodes.find(node => node.payload.id == identifyMap(elem.attributeValue("target")))
-        val result = for {
-          s <- source
-          t <- target
-        } yield Set(DirectedEdge(s, t, ElementInfo(elem.attributeValue("id").replaceAll("_", "").replaceAll("-", ""), elem.attributeValue("value"))))
-
-        if (result.isEmpty) {
-          Set()
-        } else {
-          result.get
+    diagramData
+      .map(data => {
+        // this.logger.trace("diagram data: " + data)
+        val result = decoder.decode(data._2)
+        // this.logger.trace("result: " + result.length)
+        (data._1, result)
+      })
+      .map((data: (String, Array[Byte])) => {
+        (data._1, URLDecoder.decode(this.inflate(data._2), "UTF-8"))
+      })
+      .map(data => {
+        (data._1,  reader.read(new StringReader(data._2)))
+      })
+      .map(data => {
+        import collection.JavaConverters._
+        import scala.language.implicitConversions
+        val (name, doc) = data
+        val nodeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@vertex=\"1\"]").asInstanceOf[java.util.List[Element]].asScala
+          .filter(node => node.attributeValue("connectable") == null || !node.attributeValue("connectable").equals("0"))
+          .toList
+        val edgeElements: List[Element] = doc.selectNodes("/mxGraphModel/root/mxCell[@edge=\"1\"]").asInstanceOf[java.util.List[Element]].asScala.toList
+        val noEndEdge: List[Element] = edgeElements.filter(elem => elem.attributeValue("source") == null || elem.attributeValue("target") == null)
+        if (noEndEdge.size > 0) {
+          val represent = noEndEdge.map(edge => {
+            if (edge.attributeValue("source") != null) {
+              nodeElements
+                .filter(node => node.attributeValue("id") == edge.attributeValue("source"))
+                .map(node => node.attributeValue("value") + "-> <none>")
+            } else {
+              nodeElements
+                .filter(node => node.attributeValue("id") == edge.attributeValue("target"))
+                .map(node => "<none> -> " + node.attributeValue("value"))
+            }
+          })
+          throw new Error(represent.flatten.mkString("\n"))
         }
-      }).flatten
+        this.logger.trace("nodes in model: " + nodeElements.length)
+        this.logger.trace("edges in model: " + edgeElements.length)
 
-      this.logger.trace("nodes parsed: " + nodes.size)
-      this.logger.trace("edges parsed: " + edges.size)
+        val nodes: Set[Node[ElementInfo]] = nodeElements.map((elem: Element) => {
+          val tempNode = this.pseudoNode(s"${elem.attributeValue("id")} - ${elem.attributeValue("value")}")
+          identifyMap.put(elem.attributeValue("id"), tempNode.payload.id)
+          tempNode
+        }).toSet
+        val edges: Set[Edge[ElementInfo, ElementInfo]] = edgeElements.toSet.map((elem: Element) => {
+          val source = nodes.find(node => node.payload.id == identifyMap(elem.attributeValue("source")))
+          val target = nodes.find(node => node.payload.id == identifyMap(elem.attributeValue("target")))
+          val result = for {
+            s <- source
+            t <- target
+          } yield Set(DirectedEdge(s, t, ElementInfo(elem.attributeValue("id").replaceAll("_", "").replaceAll("-", ""), elem.attributeValue("value"))))
 
-      Graph(nodes, edges)
-    })
+          if (result.isEmpty) {
+            Set()
+          } else {
+            result.get
+          }
+        }).flatten
+
+        this.logger.trace("nodes parsed: " + nodes.size)
+        this.logger.trace("edges parsed: " + edges.size)
+
+        (name, Graph(nodes, edges))
+      })
   }
 
   def mergeEquivalentEdges(edges: Set[Edge[ElementInfo, ElementInfo]]): Set[Edge[ElementInfo, ElementInfo]] = {

@@ -7,7 +7,7 @@ import tw.lanyitin.common.ast.TokenType.TokenType
 import tw.lanyitin.common.ast.{BooleanLiteralExpression, Expression, IdentifierExpression, OperationCallExpression, Token, TokenType}
 
 class ModelParserSpec extends FunSuite with Matchers {
-  val config = Config("src/test/resources/sample.xml", true, "app-path", "bfg", true)
+  val config = Config("src/test/resources/path-coverage-example.xml", true, "app-path", "bfg", true)
   val modelParser = DrawIOModalParser(config)
   val falseConstantExpression = new BooleanLiteralExpression(Token(TokenType.BooleanConstantToken, "false", 0, 0), false)
   val trueConstantExpression = new BooleanLiteralExpression(Token(TokenType.BooleanConstantToken, "true", 0, 0), true)
