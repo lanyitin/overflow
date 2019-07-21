@@ -13,7 +13,7 @@ lazy val root = project
 
     // Core Libraries
     libraryDependencies += "tw.lanyitin.common" % "common-graph" % "0.1.0",
-    libraryDependencies += "tw.lanyitin" % "huevo" % "0.1.0",
+    libraryDependencies += "tw.lanyitin" % "huevo" % "0.2.0",
 
     // Useful Common Libraries
     libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.9",

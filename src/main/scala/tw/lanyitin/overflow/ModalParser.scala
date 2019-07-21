@@ -11,7 +11,7 @@ import tw.lanyitin.common.graph.Path
 import tw.lanyitin.common.graph.Edge
 import tw.lanyitin.common.graph.Node
 import tw.lanyitin.common.graph.GraphFactory
-import tw.lanyitin.common.parser.ParseResult
+import tw.lanyitin.common.parser.{Failed, ParseResult}
 import tw.lanyitin.common.ast.TokenType.BooleanConstantToken
 
 import scala.collection.mutable
@@ -176,10 +176,10 @@ trait ModelParser[V, U] { self: GraphFactory[V, U] =>
   }
   def parseExpression(str: String): Try[Expression] = {
     Parsers.parse_program(scanner(str)) match {
-      case Right(ParseResult(_, result)) => result match {
+      case tw.lanyitin.common.parser.Success(_, result) => result match {
         case ExprsBlock(exprs) => Success(exprs.head)
       }
-      case Left(errors) => Failure(new Exception(errors.mkString("\n")))
+      case failed@Failed(_, _, _, _) => Failure(new Exception(failed.toString))
     }
   }
 
